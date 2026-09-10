@@ -1,13 +1,20 @@
 const STORAGE_KEY = "ghTranslatorSettings";
 const DEFAULT_SETTINGS = {
   enabled: true,
-  targetLanguage: "zh-CN"
+  targetLanguage: "zh-CN",
+  apiBaseUrl: "",
+  apiKey: "",
+  model: ""
 };
 
 const elements = {
   enabled: document.getElementById("enabled"),
+  apiBaseUrl: document.getElementById("apiBaseUrl"),
+  apiKey: document.getElementById("apiKey"),
+  model: document.getElementById("model"),
   saveButton: document.getElementById("saveButton"),
   refreshButton: document.getElementById("refreshButton"),
+  translateButton: document.getElementById("translateButton"),
   restoreButton: document.getElementById("restoreButton"),
   status: document.getElementById("runtimeStatus")
 };
@@ -62,12 +69,18 @@ async function loadSettings() {
   const settings = { ...DEFAULT_SETTINGS, ...(result[STORAGE_KEY] || {}) };
 
   elements.enabled.checked = settings.enabled;
+  elements.apiBaseUrl.value = settings.apiBaseUrl;
+  elements.apiKey.value = settings.apiKey;
+  elements.model.value = settings.model;
 }
 
 async function saveSettings() {
   const settings = {
     enabled: elements.enabled.checked,
-    targetLanguage: "zh-CN"
+    targetLanguage: "zh-CN",
+    apiBaseUrl: elements.apiBaseUrl.value.trim(),
+    apiKey: elements.apiKey.value.trim(),
+    model: elements.model.value.trim()
   };
 
   await chrome.storage.sync.set({ [STORAGE_KEY]: settings });
@@ -92,6 +105,17 @@ async function refreshCurrentPage() {
   setStatus("当前页已重新应用词典翻译。");
 }
 
+async function translateCurrentPage() {
+  const tab = await getCurrentTab();
+  setStatus("正在调用 AI 翻译当前页正文...");
+  const response = await notifyContentScript(tab, "translatePage");
+  if (!response?.ok) {
+    setStatus(response?.error || "AI 翻译失败。", true);
+    return;
+  }
+  setStatus(`AI 翻译完成，共处理 ${response.count} 个正文区域。`);
+}
+
 async function restoreCurrentPage() {
   const tab = await getCurrentTab();
   await notifyContentScript(tab, "restorePage");
@@ -104,6 +128,10 @@ elements.saveButton.addEventListener("click", () => {
 
 elements.refreshButton.addEventListener("click", () => {
   refreshCurrentPage().catch((error) => setStatus(error.message, true));
+});
+
+elements.translateButton.addEventListener("click", () => {
+  translateCurrentPage().catch((error) => setStatus(error.message, true));
 });
 
 elements.restoreButton.addEventListener("click", () => {

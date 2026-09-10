@@ -8,8 +8,12 @@
     "activeTab"
   ],
   "host_permissions": [
-    "https://github.com/*"
+    "https://github.com/*",
+    "<all_urls>"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_title": "GitHub Translator",
     "default_popup": "popup.html"

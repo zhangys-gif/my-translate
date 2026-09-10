@@ -1,7 +1,10 @@
 const STORAGE_KEY = "ghTranslatorSettings";
 const DEFAULT_SETTINGS = {
   enabled: true,
-  targetLanguage: "zh-CN"
+  targetLanguage: "zh-CN",
+  apiBaseUrl: "",
+  apiKey: "",
+  model: ""
 };
 
 function normalizeLookupText(text) {
@@ -16,8 +19,10 @@ const EXACT_TEXT_MAP = new Map(
     ["Explore", "探索"],
     ["Codespaces", "云端开发"],
     ["Projects", "项目"],
+    ["Agents", "智能体"],
     ["Wiki", "维基"],
     ["Security", "安全"],
+    ["Security and quality", "安全与质量"],
     ["Insights", "洞察"],
     ["Actions", "操作"],
     ["Code", "代码"],
@@ -69,6 +74,11 @@ const EXACT_TEXT_MAP = new Map(
     ["Labels", "标签"],
     ["Milestone", "里程碑"],
     ["Reviewers", "审查者"],
+    ["Security policy", "安全策略"],
+    ["Security advisories", "安全通告"],
+    ["Dependabot alerts", "Dependabot 警报"],
+    ["Code scanning alerts", "代码扫描警报"],
+    ["Secret scanning alerts", "敏感信息扫描警报"],
     ["Conversation", "讨论"],
     ["Commits", "提交"],
     ["Checks", "检查"],
@@ -117,8 +127,10 @@ const EXACT_TEXT_MAP = new Map(
     ["Open", "未关闭"],
     ["Merged", "已合并"],
     ["Draft", "草稿"],
+    ["No", "无"],
     ["Members", "成员"],
     ["No results", "无结果"],
+    ["None", "无"],
     ["Loading", "加载中"],
     ["Copied!", "已复制"],
     ["Copy", "复制"],
@@ -130,6 +142,21 @@ const EXACT_TEXT_MAP = new Map(
 
 const PHRASE_REPLACEMENTS = [
   [/\bNo description, website, or topics provided\./gi, "未提供描述、网站或主题。"],
+  [/\bNo description provided\./gi, "未提供描述。"],
+  [/\bNo security policy detected\b/gi, "未检测到安全策略"],
+  [/\bSecurity policy not enabled\b/gi, "未启用安全策略"],
+  [/\bNo releases published\b/gi, "暂无发行版"],
+  [/\bNo packages published\b/gi, "暂无软件包"],
+  [/\bNo projects\b/gi, "暂无项目"],
+  [/\bNo milestone\b/gi, "无里程碑"],
+  [/\bNo assignees\b/gi, "无负责人"],
+  [/\bNo reviewers\b/gi, "无审查者"],
+  [/\bNo labels\b/gi, "无标签"],
+  [/\bNo branches\b/gi, "无分支"],
+  [/\bNo tags\b/gi, "无标签"],
+  [/\bNo commits yet\b/gi, "暂无提交记录"],
+  [/\bNo results matched your search\./gi, "没有匹配你搜索条件的结果。"],
+  [/\bNo results found\b/gi, "未找到结果"],
   [/\bLearn more about labels\b/gi, "了解更多关于标签的信息"],
   [/\bLearn more about pull requests\b/gi, "了解更多关于拉取请求的信息"],
   [/\bLearn more about issues\b/gi, "了解更多关于议题的信息"],
@@ -281,7 +308,9 @@ const CONTEXTUAL_TEXT_MAPS = [
         ["Projects", "项目"],
         ["Milestone", "里程碑"],
         ["Reviewers", "审查者"],
-        ["Participants", "参与者"]
+        ["Participants", "参与者"],
+        ["Agents", "智能体"],
+        ["Security", "安全"]
       ].map(([key, value]) => [normalizeLookupText(key), value])
     )
   },
@@ -290,6 +319,9 @@ const CONTEXTUAL_TEXT_MAPS = [
     map: new Map(
       [
         ["About", "仓库简介"],
+        ["Agents", "智能体"],
+        ["Security", "安全"],
+        ["Security and quality", "安全与质量"],
         ["Releases", "发行版"],
         ["Packages", "软件包"],
         ["Languages", "开发语言"],
@@ -301,6 +333,40 @@ const CONTEXTUAL_TEXT_MAPS = [
   }
 ];
 
+const MODULE_HELP_DEFINITIONS = [
+  { aliases: ["Code", "代码"], description: "查看仓库文件、目录结构和源码内容。" },
+  { aliases: ["Issues", "议题"], description: "提交、跟踪和讨论 Bug、需求与任务。" },
+  { aliases: ["Pull requests", "拉取请求"], description: "对代码改动发起合并申请并进行审查。" },
+  { aliases: ["Discussions", "讨论"], description: "围绕想法、提问和社区交流进行讨论。" },
+  { aliases: ["Actions", "操作"], description: "配置和查看自动化构建、测试与部署流程。" },
+  { aliases: ["Projects", "项目"], description: "用看板或列表管理任务进度和协作流程。" },
+  { aliases: ["Wiki", "维基"], description: "存放项目说明、文档和长期维护资料。" },
+  { aliases: ["Security", "安全"], description: "查看安全策略、漏洞提醒和安全相关配置。" },
+  {
+    aliases: ["Security and quality", "安全与质量"],
+    description: "集中展示安全扫描、依赖风险和代码质量相关信息。"
+  },
+  { aliases: ["Insights", "洞察"], description: "查看仓库活跃度、贡献情况和统计信息。" },
+  { aliases: ["Settings", "设置"], description: "管理仓库权限、分支规则、页面和集成配置。" },
+  { aliases: ["Agents", "智能体"], description: "查看或使用仓库中可用的自动化智能助手能力。" }
+];
+
+const MODULE_HELP_MAP = new Map(
+  MODULE_HELP_DEFINITIONS.flatMap(({ aliases, description }) =>
+    aliases.map((alias) => [normalizeLookupText(alias), description])
+  )
+);
+
+const MODULE_HELP_ALIASES = Array.from(MODULE_HELP_MAP.keys()).sort((a, b) => b.length - a.length);
+const MODULE_HELP_SELECTORS = [
+  ".UnderlineNav-item",
+  ".js-selected-navigation-item.UnderlineNav-item",
+  "nav[aria-label*='Repository'] a",
+  "nav[aria-label*='repository'] a"
+].join(", ");
+
+const MODULE_HELP_STYLE_ID = "gh-translator-help-style";
+const MODULE_HELP_POPOVER_ID = "gh-translator-help-popover";
 const translatedTextNodes = new Map();
 const translatedAttributes = new Map();
 let observer;
@@ -317,12 +383,338 @@ function shouldSkipNode(node) {
   }
   if (
     parent.closest(
-      "pre, code, textarea, input, select, option, script, style, .gh-translator-panel, .gh-translator-result"
+      "pre, code, textarea, input, select, option, script, style, .gh-translator-panel, .gh-translator-result, .gh-translator-help-badge"
     )
   ) {
     return true;
   }
   return false;
+}
+
+function getElementLabelText(element) {
+  const clone = element.cloneNode(true);
+  clone
+    .querySelectorAll(".Counter, .counter, .gh-translator-help-badge, svg, img, .octicon")
+    .forEach((node) => node.remove());
+  const pieces = [];
+  for (const node of clone.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent?.replace(/\s+/g, " ").trim();
+      if (text) {
+        pieces.push(text);
+      }
+      continue;
+    }
+
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const childText = node.textContent?.replace(/\s+/g, " ").trim();
+      if (childText) {
+        pieces.push(childText);
+      }
+    }
+  }
+
+  const joined = pieces.join(" ").trim();
+  return joined || clone.textContent?.replace(/\s+/g, " ").trim() || "";
+}
+
+function isRepositoryModuleButton(element) {
+  if (!element?.matches) {
+    return false;
+  }
+
+  if (element.matches(".UnderlineNav-item")) {
+    return true;
+  }
+
+  return Boolean(
+    element.closest("nav[aria-label*='Repository']") ||
+      element.closest("nav[aria-label*='repository']") ||
+      element.closest(".UnderlineNav-body")
+  );
+}
+
+function ensureHelpStyles() {
+  if (document.getElementById(MODULE_HELP_STYLE_ID)) {
+    return;
+  }
+
+  const style = document.createElement("style");
+  style.id = MODULE_HELP_STYLE_ID;
+  style.textContent = `
+    .gh-translator-help-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      margin-left: 6px;
+      border: 1px solid var(--borderColor-default, #d0d7de);
+      border-radius: 999px;
+      background: var(--button-default-bgColor-rest, #f6f8fa);
+      color: var(--fgColor-muted, #656d76);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1;
+      vertical-align: text-bottom;
+      cursor: help;
+      user-select: none;
+      box-sizing: border-box;
+      flex-shrink: 0;
+    }
+
+    .gh-translator-help-badge:hover,
+    .gh-translator-help-badge:focus-visible {
+      background: var(--button-default-bgColor-hover, #f3f4f6);
+      border-color: var(--borderColor-muted, #afb8c1);
+      color: var(--fgColor-default, #24292f);
+      outline: none;
+    }
+
+    .gh-translator-help-popover {
+      position: fixed;
+      min-width: 180px;
+      max-width: 260px;
+      padding: 8px 10px;
+      border: 1px solid var(--borderColor-default, #d0d7de);
+      border-radius: 6px;
+      background: var(--overlay-bgColor, #ffffff);
+      color: var(--fgColor-default, #24292f);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.5;
+      box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+      white-space: normal;
+      text-align: left;
+      z-index: 999999;
+      pointer-events: none;
+    }
+
+    .gh-translator-help-popover::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 100%;
+      width: 8px;
+      height: 8px;
+      background: inherit;
+      border-right: 1px solid var(--borderColor-default, #d0d7de);
+      border-bottom: 1px solid var(--borderColor-default, #d0d7de);
+      transform: translateX(-50%) rotate(45deg);
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function getHelpPopover() {
+  let popover = document.getElementById(MODULE_HELP_POPOVER_ID);
+  if (popover) {
+    return popover;
+  }
+
+  popover = document.createElement("div");
+  popover.id = MODULE_HELP_POPOVER_ID;
+  popover.className = "gh-translator-help-popover";
+  popover.hidden = true;
+  document.body.appendChild(popover);
+  return popover;
+}
+
+function hideHelpPopover() {
+  const popover = document.getElementById(MODULE_HELP_POPOVER_ID);
+  if (!popover) {
+    return;
+  }
+  popover.hidden = true;
+}
+
+function showHelpPopover(target, description) {
+  const popover = getHelpPopover();
+  popover.textContent = description;
+  popover.hidden = false;
+
+  const targetRect = target.getBoundingClientRect();
+  const popoverRect = popover.getBoundingClientRect();
+  const left = Math.min(
+    Math.max(12, targetRect.left + targetRect.width / 2 - popoverRect.width / 2),
+    window.innerWidth - popoverRect.width - 12
+  );
+  const top = Math.max(12, targetRect.top - popoverRect.height - 10);
+
+  popover.style.left = `${left}px`;
+  popover.style.top = `${top}px`;
+}
+
+function createHelpBadge(description) {
+  const badge = document.createElement("span");
+  badge.className = "gh-translator-help-badge";
+  badge.tabIndex = 0;
+  badge.setAttribute("role", "button");
+  badge.textContent = "?";
+  badge.title = description;
+  badge.setAttribute("aria-label", description);
+
+  badge.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  badge.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  badge.addEventListener("mouseenter", () => showHelpPopover(badge, description));
+  badge.addEventListener("focus", () => showHelpPopover(badge, description));
+  badge.addEventListener("mouseleave", hideHelpPopover);
+  badge.addEventListener("blur", hideHelpPopover);
+
+  return badge;
+}
+
+function getUniqueModuleCandidates(root) {
+  const candidates = [];
+  if (root.matches?.(MODULE_HELP_SELECTORS)) {
+    candidates.push(root);
+  }
+  root.querySelectorAll(MODULE_HELP_SELECTORS).forEach((element) => candidates.push(element));
+
+  return [...new Set(candidates)];
+}
+
+function findModuleHelpDescription(labelText) {
+  const normalized = normalizeLookupText(labelText);
+  const exactDescription = MODULE_HELP_MAP.get(normalized);
+  if (exactDescription) {
+    return exactDescription;
+  }
+
+  for (const alias of MODULE_HELP_ALIASES) {
+    if (
+      normalized === alias ||
+      normalized.startsWith(`${alias} `) ||
+      normalized.endsWith(` ${alias}`) ||
+      normalized.includes(` ${alias} `)
+    ) {
+      return MODULE_HELP_MAP.get(alias);
+    }
+  }
+
+  return null;
+}
+
+function applyModuleHelp(root = document.body) {
+  if (!root?.querySelectorAll) {
+    return;
+  }
+
+  ensureHelpStyles();
+  const candidates = getUniqueModuleCandidates(root);
+
+  for (const element of candidates) {
+    if (!isRepositoryModuleButton(element)) {
+      continue;
+    }
+
+    if (element.querySelector(":scope > .gh-translator-help-badge")) {
+      continue;
+    }
+
+    if (element.closest(".gh-translator-help-badge")) {
+      continue;
+    }
+
+    const labelText = getElementLabelText(element);
+    if (!labelText || labelText.length > 40) {
+      continue;
+    }
+
+    const description = findModuleHelpDescription(labelText);
+    if (!description) {
+      continue;
+    }
+
+    element.appendChild(createHelpBadge(description));
+  }
+}
+
+function sendRuntimeMessage(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+function collectBlocks() {
+  const selectors = [
+    "article.markdown-body",
+    ".markdown-body",
+    ".comment-body",
+    ".js-comment-body",
+    "[data-testid='issue-body']",
+    "[data-testid='issue-comment-body']",
+    "[data-testid='pr-timeline-comment-body']",
+    ".review-comment-contents"
+  ];
+
+  const blocks = [];
+  const seen = new Set();
+  for (const selector of selectors) {
+    document.querySelectorAll(selector).forEach((element) => {
+      if (seen.has(element)) {
+        return;
+      }
+      const text = element.innerText?.trim();
+      if (!text || text.length < 20) {
+        return;
+      }
+      seen.add(element);
+      blocks.push(element);
+    });
+  }
+  return blocks;
+}
+
+function injectTranslationResult(element, translatedText) {
+  if (element.previousElementSibling?.classList.contains("gh-translator-result")) {
+    element.previousElementSibling.remove();
+  }
+
+  const panel = document.createElement("div");
+  panel.className = "gh-translator-result";
+  panel.style.border = "1px solid #d0d7de";
+  panel.style.borderRadius = "6px";
+  panel.style.padding = "12px";
+  panel.style.marginBottom = "12px";
+  panel.style.background = "#f6f8fa";
+  panel.style.whiteSpace = "pre-wrap";
+  panel.style.fontSize = "14px";
+  panel.style.lineHeight = "1.6";
+  panel.innerText = `AI 中文翻译\n\n${translatedText}`;
+  element.parentNode?.insertBefore(panel, element);
+}
+
+async function translatePageContent() {
+  const blocks = collectBlocks();
+  if (!blocks.length) {
+    return { ok: false, error: "当前页面没有找到适合翻译的正文区域。" };
+  }
+
+  for (const element of blocks) {
+    const response = await sendRuntimeMessage({
+      action: "translateText",
+      text: element.innerText.trim()
+    });
+    if (!response?.ok) {
+      return { ok: false, error: response?.error || "AI 翻译失败。" };
+    }
+    injectTranslationResult(element, response.translatedText);
+  }
+
+  return { ok: true, count: blocks.length };
 }
 
 function getElementContextMaps(referenceElement) {
@@ -426,6 +818,7 @@ function applyUiTranslation(root = document.body) {
   translateNodeText(root);
   if (root.querySelectorAll) {
     translateAttributes(root);
+    applyModuleHelp(root);
   }
 }
 
@@ -444,7 +837,9 @@ function restoreUiTranslation() {
     });
   }
 
-  document.querySelectorAll(".gh-translator-result").forEach((node) => node.remove());
+  document
+    .querySelectorAll(".gh-translator-result, .gh-translator-help-badge, #gh-translator-help-popover")
+    .forEach((node) => node.remove());
   translatedTextNodes.clear();
   translatedAttributes.clear();
 }
@@ -482,6 +877,11 @@ function startObserver() {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.action === "translatePage") {
+    translatePageContent().then(sendResponse);
+    return true;
+  }
+
   if (message?.action === "restorePage") {
     restoreUiTranslation();
     sendResponse({ ok: true });
