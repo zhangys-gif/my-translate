@@ -9,36 +9,21 @@
   <body>
     <main class="popup">
       <h1>GitHub 翻译器</h1>
+      <p class="status">当前版本为纯本地词典翻译，不调用任何 AI 接口。</p>
 
       <label class="field checkbox-field">
         <input id="enabled" type="checkbox" />
         <span>启用 GitHub 界面翻译</span>
       </label>
 
-      <label class="field">
-        <span>API Base URL</span>
-        <input id="apiBaseUrl" type="text" placeholder="例如 https://api.openai.com/v1" />
-      </label>
-
-      <label class="field">
-        <span>API Key</span>
-        <input id="apiKey" type="password" placeholder="输入你的翻译模型密钥" />
-      </label>
-
-      <label class="field">
-        <span>Model</span>
-        <input id="model" type="text" placeholder="例如 gpt-4o-mini" />
-      </label>
-
       <div class="actions">
         <button id="saveButton" class="primary">保存设置</button>
-        <button id="translateButton">翻译当前页正文</button>
+        <button id="refreshButton">立即应用到当前页</button>
         <button id="restoreButton">恢复页面</button>
       </div>
 
-      <p id="status" class="status"></p>
+      <p id="runtimeStatus" class="status"></p>
     </main>
-
     <script src="popup.js"></script>
   </body>
 </html>

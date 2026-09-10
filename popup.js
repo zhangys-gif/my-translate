@@ -1,21 +1,15 @@
 const STORAGE_KEY = "ghTranslatorSettings";
 const DEFAULT_SETTINGS = {
   enabled: true,
-  targetLanguage: "zh-CN",
-  apiBaseUrl: "",
-  apiKey: "",
-  model: ""
+  targetLanguage: "zh-CN"
 };
 
 const elements = {
   enabled: document.getElementById("enabled"),
-  apiBaseUrl: document.getElementById("apiBaseUrl"),
-  apiKey: document.getElementById("apiKey"),
-  model: document.getElementById("model"),
   saveButton: document.getElementById("saveButton"),
-  translateButton: document.getElementById("translateButton"),
+  refreshButton: document.getElementById("refreshButton"),
   restoreButton: document.getElementById("restoreButton"),
-  status: document.getElementById("status")
+  status: document.getElementById("runtimeStatus")
 };
 
 function setStatus(message, isError = false) {
@@ -23,9 +17,44 @@ function setStatus(message, isError = false) {
   elements.status.style.color = isError ? "#cf222e" : "#57606a";
 }
 
+function isGitHubTab(tab) {
+  return typeof tab?.url === "string" && tab.url.startsWith("https://github.com/");
+}
+
 async function getCurrentTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
+}
+
+function sendMessageToTab(tabId, message) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+async function notifyContentScript(tab, action) {
+  if (!tab?.id) {
+    throw new Error("没有找到当前标签页。");
+  }
+
+  if (!isGitHubTab(tab)) {
+    throw new Error("请先切换到 github.com 页面再使用这个扩展。");
+  }
+
+  try {
+    return await sendMessageToTab(tab.id, { action });
+  } catch (error) {
+    if (error.message.includes("Receiving end does not exist")) {
+      throw new Error("当前 GitHub 页面还没连接到扩展。请刷新页面后再试一次。");
+    }
+    throw error;
+  }
 }
 
 async function loadSettings() {
@@ -33,51 +62,39 @@ async function loadSettings() {
   const settings = { ...DEFAULT_SETTINGS, ...(result[STORAGE_KEY] || {}) };
 
   elements.enabled.checked = settings.enabled;
-  elements.apiBaseUrl.value = settings.apiBaseUrl;
-  elements.apiKey.value = settings.apiKey;
-  elements.model.value = settings.model;
 }
 
 async function saveSettings() {
   const settings = {
     enabled: elements.enabled.checked,
-    targetLanguage: "zh-CN",
-    apiBaseUrl: elements.apiBaseUrl.value.trim(),
-    apiKey: elements.apiKey.value.trim(),
-    model: elements.model.value.trim()
+    targetLanguage: "zh-CN"
   };
 
   await chrome.storage.sync.set({ [STORAGE_KEY]: settings });
 
   const tab = await getCurrentTab();
-  if (tab?.id) {
-    await chrome.tabs.sendMessage(tab.id, { action: "refreshSettings" });
+  if (tab?.id && isGitHubTab(tab)) {
+    try {
+      await notifyContentScript(tab, "refreshSettings");
+      setStatus("设置已保存，并已应用到当前 GitHub 页面。");
+      return;
+    } catch (error) {
+      setStatus(`设置已保存。${error.message}`, true);
+      return;
+    }
   }
-  setStatus("设置已保存。");
+  setStatus("设置已保存。打开 GitHub 页面后会自动生效。");
 }
 
-async function translateCurrentPage() {
+async function refreshCurrentPage() {
   const tab = await getCurrentTab();
-  if (!tab?.id) {
-    setStatus("没有找到当前标签页。", true);
-    return;
-  }
-  setStatus("正在翻译正文，请稍等...");
-  const response = await chrome.tabs.sendMessage(tab.id, { action: "translatePage" });
-  if (!response?.ok) {
-    setStatus(response?.error || "翻译失败。", true);
-    return;
-  }
-  setStatus(`翻译完成，共处理 ${response.count} 个正文区域。`);
+  await notifyContentScript(tab, "refreshSettings");
+  setStatus("当前页已重新应用词典翻译。");
 }
 
 async function restoreCurrentPage() {
   const tab = await getCurrentTab();
-  if (!tab?.id) {
-    setStatus("没有找到当前标签页。", true);
-    return;
-  }
-  await chrome.tabs.sendMessage(tab.id, { action: "restorePage" });
+  await notifyContentScript(tab, "restorePage");
   setStatus("页面已恢复。");
 }
 
@@ -85,8 +102,8 @@ elements.saveButton.addEventListener("click", () => {
   saveSettings().catch((error) => setStatus(error.message, true));
 });
 
-elements.translateButton.addEventListener("click", () => {
-  translateCurrentPage().catch((error) => setStatus(error.message, true));
+elements.refreshButton.addEventListener("click", () => {
+  refreshCurrentPage().catch((error) => setStatus(error.message, true));
 });
 
 elements.restoreButton.addEventListener("click", () => {

@@ -2,19 +2,14 @@
   "manifest_version": 3,
   "name": "GitHub Translator",
   "version": "0.1.0",
-  "description": "Translate GitHub UI and page content into Chinese.",
+  "description": "Translate common GitHub UI text into Chinese with a local dictionary.",
   "permissions": [
     "storage",
-    "activeTab",
-    "scripting"
+    "activeTab"
   ],
   "host_permissions": [
-    "https://github.com/*",
-    "<all_urls>"
+    "https://github.com/*"
   ],
-  "background": {
-    "service_worker": "background.js"
-  },
   "action": {
     "default_title": "GitHub Translator",
     "default_popup": "popup.html"
