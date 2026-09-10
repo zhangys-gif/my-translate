@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GitHub Translator</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <h1>GitHub 翻译器</h1>
+
+      <label class="field checkbox-field">
+        <input id="enabled" type="checkbox" />
+        <span>启用 GitHub 界面翻译</span>
+      </label>
+
+      <label class="field">
+        <span>API Base URL</span>
+        <input id="apiBaseUrl" type="text" placeholder="例如 https://api.openai.com/v1" />
+      </label>
+
+      <label class="field">
+        <span>API Key</span>
+        <input id="apiKey" type="password" placeholder="输入你的翻译模型密钥" />
+      </label>
+
+      <label class="field">
+        <span>Model</span>
+        <input id="model" type="text" placeholder="例如 gpt-4o-mini" />
+      </label>
+
+      <div class="actions">
+        <button id="saveButton" class="primary">保存设置</button>
+        <button id="translateButton">翻译当前页正文</button>
+        <button id="restoreButton">恢复页面</button>
+      </div>
+
+      <p id="status" class="status"></p>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
