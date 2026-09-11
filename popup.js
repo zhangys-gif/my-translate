@@ -2,9 +2,9 @@ const STORAGE_KEY = "ghTranslatorSettings";
 const DEFAULT_SETTINGS = {
   enabled: true,
   targetLanguage: "zh-CN",
-  apiBaseUrl: "",
+  apiBaseUrl: "http://127.0.0.1:1234/v1",
   apiKey: "",
-  model: ""
+  model: "qwen2.5-1.5b-instruct"
 };
 
 const elements = {
@@ -102,18 +102,18 @@ async function saveSettings() {
 async function refreshCurrentPage() {
   const tab = await getCurrentTab();
   await notifyContentScript(tab, "refreshSettings");
-  setStatus("当前页已重新应用词典翻译。");
+  setStatus("当前页已重新应用界面词典翻译。");
 }
 
 async function translateCurrentPage() {
   const tab = await getCurrentTab();
-  setStatus("正在调用 AI 翻译当前页正文...");
+  setStatus("正在调用 AI 翻译当前页 README / 正文...");
   const response = await notifyContentScript(tab, "translatePage");
   if (!response?.ok) {
     setStatus(response?.error || "AI 翻译失败。", true);
     return;
   }
-  setStatus(`AI 翻译完成，共处理 ${response.count} 个正文区域。`);
+  setStatus(`AI 翻译完成，共处理 ${response.count} 个 README / 正文区域。`);
 }
 
 async function restoreCurrentPage() {
@@ -139,3 +139,4 @@ elements.restoreButton.addEventListener("click", () => {
 });
 
 loadSettings().catch((error) => setStatus(error.message, true));
+setStatus("默认使用 LM Studio 本地接口；如果你改用别的本地或云端模型，也可以直接覆盖这些配置。");

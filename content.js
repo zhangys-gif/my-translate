@@ -2,9 +2,9 @@ const STORAGE_KEY = "ghTranslatorSettings";
 const DEFAULT_SETTINGS = {
   enabled: true,
   targetLanguage: "zh-CN",
-  apiBaseUrl: "",
+  apiBaseUrl: "http://127.0.0.1:1234/v1",
   apiKey: "",
-  model: ""
+  model: "qwen2.5-1.5b-instruct"
 };
 
 function normalizeLookupText(text) {
@@ -367,6 +367,22 @@ const MODULE_HELP_SELECTORS = [
 
 const MODULE_HELP_STYLE_ID = "gh-translator-help-style";
 const MODULE_HELP_POPOVER_ID = "gh-translator-help-popover";
+const TRANSLATION_RESULT_STYLE_ID = "gh-translator-result-style";
+const FLOATING_PANEL_STYLE_ID = "gh-translator-panel-style";
+const FLOATING_PANEL_ID = "gh-translator-floating-panel";
+const MAX_UI_TEXT_LENGTH = 80;
+const MAX_UI_LINE_BREAKS = 1;
+const LONG_TEXT_CONTAINER_SELECTORS = [
+  "article.markdown-body",
+  ".markdown-body",
+  ".comment-body",
+  ".js-comment-body",
+  ".review-comment-contents",
+  "[data-testid='issue-body']",
+  "[data-testid='issue-comment-body']",
+  "[data-testid='pr-timeline-comment-body']",
+  ".repository-content .Box-body"
+].join(", ");
 const translatedTextNodes = new Map();
 const translatedAttributes = new Map();
 let observer;
@@ -388,7 +404,32 @@ function shouldSkipNode(node) {
   ) {
     return true;
   }
+  if (parent.closest(LONG_TEXT_CONTAINER_SELECTORS)) {
+    return true;
+  }
   return false;
+}
+
+function shouldUseDictionaryForText(text, referenceElement = null) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (referenceElement?.closest?.(LONG_TEXT_CONTAINER_SELECTORS)) {
+    return false;
+  }
+
+  const lineBreakCount = (trimmed.match(/\n/g) || []).length;
+  if (lineBreakCount > MAX_UI_LINE_BREAKS) {
+    return false;
+  }
+
+  if (trimmed.length > MAX_UI_TEXT_LENGTH) {
+    return false;
+  }
+
+  return true;
 }
 
 function getElementLabelText(element) {
@@ -504,6 +545,454 @@ function ensureHelpStyles() {
     }
   `;
   document.head.appendChild(style);
+}
+
+function ensureTranslationResultStyles() {
+  if (document.getElementById(TRANSLATION_RESULT_STYLE_ID)) {
+    return;
+  }
+
+  const style = document.createElement("style");
+  style.id = TRANSLATION_RESULT_STYLE_ID;
+  style.textContent = `
+    .gh-translator-result {
+      margin: 16px 0;
+      border: 1px solid var(--borderColor-default, #30363d);
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--bgColor-default, #0d1117);
+      color: var(--fgColor-default, #e6edf3);
+      box-shadow: var(--shadow-resting-small, none);
+    }
+
+    .gh-translator-result-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--borderColor-muted, #21262d);
+      background: var(--bgColor-muted, #161b22);
+      color: var(--fgColor-muted, #8b949e);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .gh-translator-result-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0 8px;
+      border: 1px solid var(--borderColor-default, #30363d);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--fgColor-muted, #8b949e);
+      font-weight: 600;
+      line-height: 20px;
+      white-space: nowrap;
+    }
+
+    .gh-translator-result-body {
+      padding: 16px;
+      background: var(--bgColor-default, #0d1117);
+      color: var(--fgColor-default, #e6edf3);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .gh-translator-result-body.markdown-body {
+      background: transparent !important;
+      color: inherit !important;
+    }
+
+    .gh-translator-result-body.markdown-body h1,
+    .gh-translator-result-body.markdown-body h2,
+    .gh-translator-result-body.markdown-body h3,
+    .gh-translator-result-body.markdown-body h4,
+    .gh-translator-result-body.markdown-body h5,
+    .gh-translator-result-body.markdown-body h6 {
+      border-bottom-color: var(--borderColor-muted, #21262d);
+      color: var(--fgColor-default, #e6edf3);
+    }
+
+    .gh-translator-result-body.markdown-body p,
+    .gh-translator-result-body.markdown-body li,
+    .gh-translator-result-body.markdown-body blockquote {
+      color: var(--fgColor-default, #e6edf3);
+    }
+
+    .gh-translator-result-body.markdown-body ol {
+      list-style: decimal;
+      padding-left: 2em;
+      margin: 0 0 16px;
+    }
+
+    .gh-translator-result-body.markdown-body ul {
+      list-style: disc;
+      padding-left: 2em;
+      margin: 0 0 16px;
+    }
+
+    .gh-translator-result-body.markdown-body li + li {
+      margin-top: 4px;
+    }
+
+    .gh-translator-result-body.markdown-body a {
+      color: var(--fgColor-accent, #2f81f7);
+    }
+
+    .gh-translator-result-body.markdown-body code {
+      background: var(--bgColor-neutral-muted, rgba(110, 118, 129, 0.4));
+      color: var(--fgColor-default, #e6edf3);
+    }
+
+    .gh-translator-result-body.markdown-body pre {
+      background: var(--bgColor-muted, #161b22);
+      border: 1px solid var(--borderColor-muted, #30363d);
+      border-radius: 6px;
+    }
+
+    .gh-translator-result-body.markdown-body pre code {
+      background: transparent;
+    }
+
+    .gh-translator-result-body.markdown-body blockquote {
+      color: var(--fgColor-muted, #8b949e);
+      border-left-color: var(--borderColor-accent-muted, #1f6feb);
+    }
+
+    .gh-translator-result-body.markdown-body hr {
+      background: var(--borderColor-muted, #21262d);
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureFloatingPanelStyles() {
+  if (document.getElementById(FLOATING_PANEL_STYLE_ID)) {
+    return;
+  }
+
+  const style = document.createElement("style");
+  style.id = FLOATING_PANEL_STYLE_ID;
+  style.textContent = `
+    .gh-translator-panel {
+      position: fixed;
+      top: 88px;
+      right: 24px;
+      width: 320px;
+      z-index: 999998;
+      border: 1px solid var(--borderColor-default, #30363d);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--bgColor-muted, #161b22);
+      color: var(--fgColor-default, #e6edf3);
+      box-shadow: 0 16px 40px rgba(1, 4, 9, 0.24);
+      backdrop-filter: blur(8px);
+      font-size: 12px;
+    }
+
+    .gh-translator-panel[data-collapsed="true"] {
+      width: auto;
+    }
+
+    .gh-translator-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--borderColor-muted, #21262d);
+      background: var(--bgColor-default, #0d1117);
+    }
+
+    .gh-translator-panel-title {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .gh-translator-panel-title strong {
+      font-size: 13px;
+      line-height: 1.3;
+      color: var(--fgColor-default, #e6edf3);
+    }
+
+    .gh-translator-panel-title span {
+      color: var(--fgColor-muted, #8b949e);
+      line-height: 1.3;
+    }
+
+    .gh-translator-panel-toggle {
+      border: 1px solid var(--borderColor-default, #30363d);
+      border-radius: 6px;
+      background: var(--button-default-bgColor-rest, #21262d);
+      color: var(--fgColor-default, #e6edf3);
+      width: 28px;
+      height: 28px;
+      cursor: pointer;
+    }
+
+    .gh-translator-panel-body {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .gh-translator-panel[data-collapsed="true"] .gh-translator-panel-body,
+    .gh-translator-panel[data-collapsed="true"] .gh-translator-panel-title span {
+      display: none;
+    }
+
+    .gh-translator-panel-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .gh-translator-panel-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--fgColor-default, #e6edf3);
+      font-size: 12px;
+    }
+
+    .gh-translator-panel-input {
+      width: 100%;
+      border: 1px solid var(--borderColor-default, #30363d);
+      border-radius: 6px;
+      padding: 7px 10px;
+      background: var(--bgColor-default, #0d1117);
+      color: var(--fgColor-default, #e6edf3);
+      box-sizing: border-box;
+      font-size: 12px;
+    }
+
+    .gh-translator-panel-input::placeholder {
+      color: var(--fgColor-muted, #8b949e);
+    }
+
+    .gh-translator-panel-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .gh-translator-panel-button {
+      border: 1px solid var(--borderColor-default, #30363d);
+      border-radius: 6px;
+      padding: 7px 10px;
+      background: var(--button-default-bgColor-rest, #21262d);
+      color: var(--fgColor-default, #e6edf3);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .gh-translator-panel-button:hover,
+    .gh-translator-panel-toggle:hover {
+      background: var(--button-default-bgColor-hover, #30363d);
+    }
+
+    .gh-translator-panel-button.primary {
+      background: var(--button-primary-bgColor-rest, #238636);
+      border-color: var(--button-primary-borderColor-rest, rgba(240, 246, 252, 0.1));
+      color: var(--button-primary-fgColor-rest, #ffffff);
+    }
+
+    .gh-translator-panel-button.primary:hover {
+      background: var(--button-primary-bgColor-hover, #2ea043);
+    }
+
+    .gh-translator-panel-hint {
+      color: var(--fgColor-muted, #8b949e);
+      line-height: 1.5;
+      font-size: 11px;
+    }
+
+    .gh-translator-panel-status {
+      min-height: 18px;
+      color: var(--fgColor-muted, #8b949e);
+      line-height: 1.5;
+      font-size: 11px;
+    }
+
+    .gh-translator-panel-details {
+      border-top: 1px solid var(--borderColor-muted, #21262d);
+      padding-top: 10px;
+    }
+
+    .gh-translator-panel-details summary {
+      cursor: pointer;
+      color: var(--fgColor-muted, #8b949e);
+      user-select: none;
+    }
+
+    .gh-translator-panel-details[open] summary {
+      margin-bottom: 10px;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function getFloatingPanel() {
+  return document.getElementById(FLOATING_PANEL_ID);
+}
+
+function setFloatingPanelStatus(message, isError = false) {
+  const status = document.getElementById("gh-translator-panel-status");
+  if (!status) {
+    return;
+  }
+  status.textContent = message;
+  status.style.color = isError ? "var(--fgColor-danger, #f85149)" : "var(--fgColor-muted, #8b949e)";
+}
+
+function syncFloatingPanelFields() {
+  const panel = getFloatingPanel();
+  if (!panel) {
+    return;
+  }
+
+  const enabledInput = panel.querySelector("[data-role='enabled']");
+  const apiBaseInput = panel.querySelector("[data-role='apiBaseUrl']");
+  const apiKeyInput = panel.querySelector("[data-role='apiKey']");
+  const modelInput = panel.querySelector("[data-role='model']");
+
+  if (enabledInput) {
+    enabledInput.checked = currentSettings.enabled;
+  }
+  if (apiBaseInput) {
+    apiBaseInput.value = currentSettings.apiBaseUrl || "";
+  }
+  if (apiKeyInput) {
+    apiKeyInput.value = currentSettings.apiKey || "";
+  }
+  if (modelInput) {
+    modelInput.value = currentSettings.model || "";
+  }
+}
+
+async function saveCurrentSettings(nextSettings) {
+  currentSettings = { ...currentSettings, ...nextSettings };
+  await chrome.storage.sync.set({ [STORAGE_KEY]: currentSettings });
+  syncFloatingPanelFields();
+}
+
+async function applyCurrentUiTranslation() {
+  restoreUiTranslation();
+  if (currentSettings.enabled) {
+    applyUiTranslation(document.body);
+  }
+}
+
+async function handleFloatingPanelSave() {
+  const panel = getFloatingPanel();
+  if (!panel) {
+    return;
+  }
+
+  await saveCurrentSettings({
+    enabled: panel.querySelector("[data-role='enabled']")?.checked ?? true,
+    apiBaseUrl: panel.querySelector("[data-role='apiBaseUrl']")?.value.trim() || "",
+    apiKey: panel.querySelector("[data-role='apiKey']")?.value.trim() || "",
+    model: panel.querySelector("[data-role='model']")?.value.trim() || ""
+  });
+  await applyCurrentUiTranslation();
+  setFloatingPanelStatus("设置已保存。");
+}
+
+async function handleFloatingPanelApply() {
+  await applyCurrentUiTranslation();
+  setFloatingPanelStatus("已重新应用界面翻译。");
+}
+
+async function handleFloatingPanelTranslate() {
+  setFloatingPanelStatus("正在翻译当前页正文...");
+  const result = await translatePageContent();
+  if (!result.ok) {
+    setFloatingPanelStatus(result.error || "AI 翻译失败。", true);
+    return;
+  }
+  setFloatingPanelStatus(`AI 翻译完成，共处理 ${result.count} 个正文区域。`);
+}
+
+function handleFloatingPanelRestore() {
+  restoreUiTranslation();
+  setFloatingPanelStatus("页面已恢复。");
+}
+
+function createFloatingPanel() {
+  if (getFloatingPanel()) {
+    syncFloatingPanelFields();
+    return;
+  }
+
+  ensureFloatingPanelStyles();
+
+  const panel = document.createElement("aside");
+  panel.id = FLOATING_PANEL_ID;
+  panel.className = "gh-translator-panel";
+  panel.setAttribute("data-collapsed", "false");
+  panel.innerHTML = `
+    <div class="gh-translator-panel-header">
+      <div class="gh-translator-panel-title">
+        <strong>GitHub 翻译器</strong>
+        <span>本地词典 + AI 正文翻译</span>
+      </div>
+      <button type="button" class="gh-translator-panel-toggle" data-role="toggle" aria-label="折叠面板">-</button>
+    </div>
+    <div class="gh-translator-panel-body">
+      <div class="gh-translator-panel-section">
+        <label class="gh-translator-panel-label">
+          <input type="checkbox" data-role="enabled" />
+          <span>启用界面词典翻译</span>
+        </label>
+        <div class="gh-translator-panel-actions">
+          <button type="button" class="gh-translator-panel-button" data-action="apply">应用界面翻译</button>
+          <button type="button" class="gh-translator-panel-button primary" data-action="translate">AI 翻译正文</button>
+          <button type="button" class="gh-translator-panel-button" data-action="restore">恢复页面</button>
+          <button type="button" class="gh-translator-panel-button" data-action="save">保存设置</button>
+        </div>
+      </div>
+      <details class="gh-translator-panel-details">
+        <summary>AI 设置</summary>
+        <div class="gh-translator-panel-section">
+          <input class="gh-translator-panel-input" data-role="apiBaseUrl" type="text" placeholder="API Base URL" />
+          <input class="gh-translator-panel-input" data-role="model" type="text" placeholder="Model" />
+          <input class="gh-translator-panel-input" data-role="apiKey" type="password" placeholder="API Key（本地接口可留空）" />
+        </div>
+      </details>
+      <div class="gh-translator-panel-hint">悬浮面板始终可用，适合边看 GitHub 边切换翻译方式。</div>
+      <div class="gh-translator-panel-status" id="gh-translator-panel-status"></div>
+    </div>
+  `;
+
+  panel.querySelector("[data-role='toggle']")?.addEventListener("click", () => {
+    const collapsed = panel.getAttribute("data-collapsed") === "true";
+    panel.setAttribute("data-collapsed", collapsed ? "false" : "true");
+    panel.querySelector("[data-role='toggle']").textContent = collapsed ? "-" : "+";
+  });
+
+  panel.querySelector("[data-action='save']")?.addEventListener("click", () => {
+    handleFloatingPanelSave().catch((error) => setFloatingPanelStatus(error.message, true));
+  });
+  panel.querySelector("[data-action='apply']")?.addEventListener("click", () => {
+    handleFloatingPanelApply().catch((error) => setFloatingPanelStatus(error.message, true));
+  });
+  panel.querySelector("[data-action='translate']")?.addEventListener("click", () => {
+    handleFloatingPanelTranslate().catch((error) => setFloatingPanelStatus(error.message, true));
+  });
+  panel.querySelector("[data-action='restore']")?.addEventListener("click", () => {
+    try {
+      handleFloatingPanelRestore();
+    } catch (error) {
+      setFloatingPanelStatus(error.message, true);
+    }
+  });
+
+  document.body.appendChild(panel);
+  syncFloatingPanelFields();
+  setFloatingPanelStatus("面板已就绪。");
 }
 
 function getHelpPopover() {
@@ -657,7 +1146,10 @@ function collectBlocks() {
     "[data-testid='issue-body']",
     "[data-testid='issue-comment-body']",
     "[data-testid='pr-timeline-comment-body']",
-    ".review-comment-contents"
+    ".review-comment-contents",
+    ".Layout-sidebar p.f4",
+    ".f4.my-3",
+    "[itemprop='about']"
   ];
 
   const blocks = [];
@@ -665,6 +1157,12 @@ function collectBlocks() {
   for (const selector of selectors) {
     document.querySelectorAll(selector).forEach((element) => {
       if (seen.has(element)) {
+        return;
+      }
+      if (
+        element.closest(".gh-translator-result") ||
+        element.classList.contains("gh-translator-rendered-markdown")
+      ) {
         return;
       }
       const text = element.innerText?.trim();
@@ -675,7 +1173,304 @@ function collectBlocks() {
       blocks.push(element);
     });
   }
-  return blocks;
+
+  return blocks.filter(
+    (element) => !blocks.some((other) => other !== element && other.contains(element))
+  );
+}
+
+function collapseInlineWhitespace(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function serializeInlineNode(node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return collapseInlineWhitespace(node.textContent || "");
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return "";
+  }
+
+  const element = node;
+  const tagName = element.tagName.toLowerCase();
+
+  if (tagName === "br") {
+    return "\n";
+  }
+
+  if (tagName === "code" && element.parentElement?.tagName.toLowerCase() !== "pre") {
+    return `\`${collapseInlineWhitespace(element.textContent || "")}\``;
+  }
+
+  const childrenText = Array.from(element.childNodes)
+    .map((child) => serializeInlineNode(child))
+    .join("");
+
+  if (tagName === "a") {
+    const href = element.getAttribute("href");
+    if (href && !href.startsWith("#")) {
+      return `[${childrenText || collapseInlineWhitespace(element.textContent || "")}](${href})`;
+    }
+    return childrenText;
+  }
+
+  if (tagName === "strong" || tagName === "b") {
+    return `**${childrenText}**`;
+  }
+
+  if (tagName === "em" || tagName === "i") {
+    return `*${childrenText}*`;
+  }
+
+  return childrenText;
+}
+
+function serializeListItem(element, depth, ordered, index) {
+  const indent = "  ".repeat(depth);
+  const marker = ordered ? `${index}. ` : "- ";
+  const inlineParts = [];
+  const nestedBlocks = [];
+
+  for (const child of element.childNodes) {
+    if (
+      child.nodeType === Node.ELEMENT_NODE &&
+      ["ul", "ol"].includes(child.tagName.toLowerCase())
+    ) {
+      nestedBlocks.push(serializeBlockNode(child, depth + 1));
+      continue;
+    }
+    inlineParts.push(serializeInlineNode(child));
+  }
+
+  const mainLine = `${indent}${marker}${collapseInlineWhitespace(inlineParts.join(""))}`.trimEnd();
+  const nestedText = nestedBlocks.filter(Boolean).join("\n");
+  return [mainLine, nestedText].filter(Boolean).join("\n");
+}
+
+function serializeBlockNode(node, depth = 0) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return collapseInlineWhitespace(node.textContent || "");
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return "";
+  }
+
+  const element = node;
+  const tagName = element.tagName.toLowerCase();
+
+  if (tagName === "pre") {
+    const codeElement = element.querySelector("code");
+    const codeText = codeElement ? codeElement.textContent || "" : element.textContent || "";
+    const languageClass = codeElement?.className
+      ?.split(/\s+/)
+      .find((className) => className.startsWith("language-"));
+    const language = languageClass ? languageClass.replace("language-", "") : "";
+    return `\`\`\`${language}\n${codeText.trimEnd()}\n\`\`\``;
+  }
+
+  if (/^h[1-6]$/.test(tagName)) {
+    const level = Number.parseInt(tagName.slice(1), 10);
+    return `${"#".repeat(level)} ${collapseInlineWhitespace(Array.from(element.childNodes).map((child) => serializeInlineNode(child)).join(""))}`;
+  }
+
+  if (tagName === "p") {
+    return collapseInlineWhitespace(Array.from(element.childNodes).map((child) => serializeInlineNode(child)).join(""));
+  }
+
+  if (tagName === "blockquote") {
+    const content = Array.from(element.childNodes)
+      .map((child) => serializeBlockNode(child, depth))
+      .filter(Boolean)
+      .join("\n");
+    return content
+      .split("\n")
+      .map((line) => (line ? `> ${line}` : ">"))
+      .join("\n");
+  }
+
+  if (tagName === "ul" || tagName === "ol") {
+    const ordered = tagName === "ol";
+    const start = Number.parseInt(element.getAttribute("start") || "1", 10);
+    return Array.from(element.children)
+      .filter((child) => child.tagName?.toLowerCase() === "li")
+      .map((child, index) => serializeListItem(child, depth, ordered, start + index))
+      .join("\n");
+  }
+
+  if (tagName === "hr") {
+    return "---";
+  }
+
+  if (tagName === "table") {
+    return collapseInlineWhitespace(element.innerText || "");
+  }
+
+  if (tagName === "img") {
+    const alt = element.getAttribute("alt");
+    return alt ? `![${alt}]` : "";
+  }
+
+  return Array.from(element.childNodes)
+    .map((child) => serializeBlockNode(child, depth))
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function extractStructuredText(element) {
+  if (
+    element.matches?.(
+      "article.markdown-body, .markdown-body, .comment-body, .js-comment-body, .review-comment-contents"
+    )
+  ) {
+    return Array.from(element.childNodes)
+      .map((child) => serializeBlockNode(child))
+      .filter(Boolean)
+      .join("\n\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  return element.innerText?.trim() || "";
+}
+
+function escapeHtml(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderInlineMarkdown(text) {
+  let rendered = escapeHtml(text);
+  rendered = rendered.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+  );
+  rendered = rendered.replace(/`([^`]+)`/g, "<code>$1</code>");
+  rendered = rendered.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  rendered = rendered.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+  rendered = rendered.replace(/(^|[^\*])\*([^*]+)\*(?!\*)/g, "$1<em>$2</em>");
+  rendered = rendered.replace(/(^|[^_])_([^_]+)_(?!_)/g, "$1<em>$2</em>");
+  rendered = rendered.replace(/\n/g, "<br>");
+  return rendered;
+}
+
+function renderMarkdownToHtml(markdown) {
+  const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
+  const html = [];
+  let paragraphLines = [];
+  let listType = null;
+  let orderedListStart = 1;
+  let codeFence = null;
+
+  function flushParagraph() {
+    if (!paragraphLines.length) {
+      return;
+    }
+    html.push(`<p>${renderInlineMarkdown(paragraphLines.join("\n"))}</p>`);
+    paragraphLines = [];
+  }
+
+  function closeList() {
+    if (!listType) {
+      return;
+    }
+    html.push(listType === "ol" ? "</ol>" : "</ul>");
+    listType = null;
+    orderedListStart = 1;
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (codeFence) {
+      if (trimmed.startsWith("```")) {
+        html.push(
+          `<pre><code class="language-${escapeHtml(codeFence.language)}">${escapeHtml(codeFence.lines.join("\n"))}</code></pre>`
+        );
+        codeFence = null;
+      } else {
+        codeFence.lines.push(line);
+      }
+      continue;
+    }
+
+    if (trimmed.startsWith("```")) {
+      flushParagraph();
+      closeList();
+      codeFence = {
+        language: trimmed.slice(3).trim(),
+        lines: []
+      };
+      continue;
+    }
+
+    if (!trimmed) {
+      flushParagraph();
+      closeList();
+      continue;
+    }
+
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      flushParagraph();
+      closeList();
+      const level = headingMatch[1].length;
+      html.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
+      continue;
+    }
+
+    const orderedListMatch = trimmed.match(/^\d+\.\s+(.*)$/);
+    if (orderedListMatch) {
+      flushParagraph();
+      const itemNumber = Number.parseInt(trimmed.match(/^(\d+)\./)?.[1] || "1", 10);
+      if (listType !== "ol") {
+        closeList();
+        orderedListStart = Number.isNaN(itemNumber) ? 1 : itemNumber;
+        html.push(orderedListStart > 1 ? `<ol start="${orderedListStart}">` : "<ol>");
+        listType = "ol";
+      }
+      html.push(`<li>${renderInlineMarkdown(orderedListMatch[1])}</li>`);
+      continue;
+    }
+
+    const unorderedListMatch = trimmed.match(/^[-*+]\s+(.*)$/);
+    if (unorderedListMatch) {
+      flushParagraph();
+      if (listType !== "ul") {
+        closeList();
+        html.push("<ul>");
+        listType = "ul";
+      }
+      html.push(`<li>${renderInlineMarkdown(unorderedListMatch[1])}</li>`);
+      continue;
+    }
+
+    const blockquoteMatch = trimmed.match(/^>\s?(.*)$/);
+    if (blockquoteMatch) {
+      flushParagraph();
+      closeList();
+      html.push(`<blockquote><p>${renderInlineMarkdown(blockquoteMatch[1])}</p></blockquote>`);
+      continue;
+    }
+
+    paragraphLines.push(trimmed);
+  }
+
+  flushParagraph();
+  closeList();
+
+  if (codeFence) {
+    html.push(
+      `<pre><code class="language-${escapeHtml(codeFence.language)}">${escapeHtml(codeFence.lines.join("\n"))}</code></pre>`
+    );
+  }
+
+  return html.join("\n");
 }
 
 function injectTranslationResult(element, translatedText) {
@@ -683,17 +1478,36 @@ function injectTranslationResult(element, translatedText) {
     element.previousElementSibling.remove();
   }
 
+  ensureTranslationResultStyles();
+
   const panel = document.createElement("div");
   panel.className = "gh-translator-result";
-  panel.style.border = "1px solid #d0d7de";
-  panel.style.borderRadius = "6px";
-  panel.style.padding = "12px";
-  panel.style.marginBottom = "12px";
-  panel.style.background = "#f6f8fa";
-  panel.style.whiteSpace = "pre-wrap";
-  panel.style.fontSize = "14px";
-  panel.style.lineHeight = "1.6";
-  panel.innerText = `AI 中文翻译\n\n${translatedText}`;
+
+  const heading = document.createElement("div");
+  heading.className = "gh-translator-result-header";
+
+  const badge = document.createElement("span");
+  badge.className = "gh-translator-result-badge";
+  badge.innerText = "AI 中文译文";
+
+  const headingText = document.createElement("span");
+  headingText.innerText = "已按 GitHub 文档样式渲染";
+
+  heading.appendChild(badge);
+  heading.appendChild(headingText);
+
+  const content = document.createElement("div");
+  content.className = "markdown-body gh-translator-rendered-markdown gh-translator-result-body";
+  const renderedHtml = renderMarkdownToHtml(translatedText);
+  if (renderedHtml.trim()) {
+    content.innerHTML = renderedHtml;
+  } else {
+    content.innerText = translatedText;
+    content.style.whiteSpace = "pre-wrap";
+  }
+
+  panel.appendChild(heading);
+  panel.appendChild(content);
   element.parentNode?.insertBefore(panel, element);
 }
 
@@ -704,9 +1518,13 @@ async function translatePageContent() {
   }
 
   for (const element of blocks) {
+    const sourceText = extractStructuredText(element);
+    if (!sourceText) {
+      continue;
+    }
     const response = await sendRuntimeMessage({
       action: "translateText",
-      text: element.innerText.trim()
+      text: sourceText
     });
     if (!response?.ok) {
       return { ok: false, error: response?.error || "AI 翻译失败。" };
@@ -731,6 +1549,10 @@ function translateTextByDictionary(text, referenceElement = null) {
   const original = text;
   const trimmed = text.trim();
   if (!trimmed) {
+    return original;
+  }
+
+  if (!shouldUseDictionaryForText(trimmed, referenceElement)) {
     return original;
   }
 
@@ -793,6 +1615,9 @@ function translateAttributes(root = document.body) {
       if (!original) {
         continue;
       }
+      if (!shouldUseDictionaryForText(original, element)) {
+        continue;
+      }
       const translated = translateTextByDictionary(original, element);
       if (translated === original) {
         continue;
@@ -846,6 +1671,7 @@ function restoreUiTranslation() {
 async function loadSettings() {
   const result = await chrome.storage.sync.get(STORAGE_KEY);
   currentSettings = { ...DEFAULT_SETTINGS, ...(result[STORAGE_KEY] || {}) };
+  syncFloatingPanelFields();
 }
 
 function startObserver() {
@@ -909,6 +1735,7 @@ async function init() {
     return;
   }
   await loadSettings();
+  createFloatingPanel();
   if (currentSettings.enabled) {
     applyUiTranslation(document.body);
   }

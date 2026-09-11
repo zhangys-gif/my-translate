@@ -9,7 +9,7 @@
   <body>
     <main class="popup">
       <h1>GitHub 翻译器</h1>
-      <p class="status">默认使用本地词典翻译；配置 AI 后可额外翻译 README、Issue、PR 等正文。</p>
+      <p class="status">模块名、按钮和状态词使用本地词典；README、Issue、PR 和评论正文默认使用 LM Studio 本地 AI 翻译。</p>
 
       <label class="field checkbox-field">
         <input id="enabled" type="checkbox" />
@@ -18,23 +18,23 @@
 
       <label class="field">
         <span>API Base URL</span>
-        <input id="apiBaseUrl" type="text" placeholder="例如 https://api.openai.com/v1" />
+        <input id="apiBaseUrl" type="text" placeholder="默认 http://127.0.0.1:1234/v1" />
       </label>
 
       <label class="field">
-        <span>API Key</span>
-        <input id="apiKey" type="password" placeholder="输入 AI 接口密钥" />
+        <span>API Key（可选）</span>
+        <input id="apiKey" type="password" placeholder="LM Studio 本地接口可留空" />
       </label>
 
       <label class="field">
         <span>Model</span>
-        <input id="model" type="text" placeholder="例如 gpt-4o-mini" />
+        <input id="model" type="text" placeholder="例如 qwen2.5-1.5b-instruct" />
       </label>
 
       <div class="actions">
         <button id="saveButton" class="primary">保存设置</button>
-        <button id="refreshButton">立即应用到当前页</button>
-        <button id="translateButton">AI 翻译当前页正文</button>
+        <button id="refreshButton">立即应用界面翻译</button>
+        <button id="translateButton">AI 翻译 README / 正文</button>
         <button id="restoreButton">恢复页面</button>
       </div>
 
