@@ -59,6 +59,14 @@ const SEMANTIC_PHRASE_GUIDE = [
   "no preamble / no recap / no closers -> 不写开场套话 / 不写总结回顾 / 不写收尾客套话"
 ].join("\n");
 
+const UI_TRANSLATION_STYLE_GUIDE = [
+  "你在翻译 GitHub 网站的界面文案，而不是正文内容。",
+  "只翻译短 UI 文本，例如按钮、菜单项、标签、筛选项、状态词。",
+  "输出必须简短、自然，像真正的中文网站界面。",
+  "只能输出最终中文结果，不要解释，不要加引号。",
+  "如果无法把整句完整翻成中文，就视为失败。"
+].join("\n");
+
 function buildPrimaryMessages(text) {
   return [
     {
@@ -114,6 +122,52 @@ function buildRetryMessages(text) {
   ];
 }
 
+function buildUiPrimaryMessages(text) {
+  return [
+    {
+      role: "system",
+      content:
+        [
+          "你是 GitHub UI 本地化助手。",
+          "你的任务是把 GitHub 界面上的英文短文本翻译成自然、简洁的简体中文。",
+          "只处理按钮、菜单、标签、状态、筛选项、导航项等短 UI 文案。",
+          "必须只输出中文结果，不要解释，不要复述原文。",
+          "如果不能把整句完整翻译成中文，就原样输出输入文本。",
+          "术语优先使用以下译法：",
+          GITHUB_TERM_GUIDE,
+          "请遵守以下风格：",
+          UI_TRANSLATION_STYLE_GUIDE
+        ].join("\n\n")
+    },
+    {
+      role: "user",
+      content: `请把下面这段 GitHub 界面文案翻译成简体中文，只输出结果：\n\n${text}`
+    }
+  ];
+}
+
+function buildUiRetryMessages(text) {
+  return [
+    {
+      role: "system",
+      content:
+        [
+          "你是中文网站本地化翻译器。",
+          "把输入的 GitHub UI 英文短文本翻译成完整的简体中文。",
+          "不允许输出中英混杂。",
+          "不允许解释，不允许保留英文单词。",
+          "如果无法完整翻成中文，就原样输出输入文本。",
+          "术语优先使用以下译法：",
+          GITHUB_TERM_GUIDE
+        ].join("\n\n")
+    },
+    {
+      role: "user",
+      content: `把下面 GitHub 界面文案完整翻译成简体中文，只输出结果：\n\n${text}`
+    }
+  ];
+}
+
 async function getSettings() {
   const { [STORAGE_KEY]: storedSettings } = await chrome.storage.sync.get(STORAGE_KEY);
   return { ...DEFAULT_SETTINGS, ...(storedSettings || {}) };
@@ -131,6 +185,60 @@ function buildChatEndpoint(baseUrl) {
     return `${normalized}/chat/completions`;
   }
   return `${normalized}/v1/chat/completions`;
+}
+
+function detectMostlyUntranslatedOutput(input, output) {
+  const normalizedInput = input.replace(/\s+/g, " ").trim();
+  const normalizedOutput = output.replace(/\s+/g, " ").trim();
+  const inputAsciiWords = normalizedInput.match(/[A-Za-z]{3,}/g) || [];
+  const outputAsciiWords = normalizedOutput.match(/[A-Za-z]{3,}/g) || [];
+  const chineseChars = normalizedOutput.match(/[\u4e00-\u9fff]/g) || [];
+
+  if (!normalizedOutput) {
+    return true;
+  }
+
+  if (
+    normalizedOutput === normalizedInput ||
+    (normalizedOutput.length > 0 &&
+      normalizedInput.length > 0 &&
+      normalizedOutput.includes(normalizedInput.slice(0, Math.min(120, normalizedInput.length))))
+  ) {
+    return true;
+  }
+
+  if (inputAsciiWords.length >= 8 && chineseChars.length < 6 && outputAsciiWords.length >= 6) {
+    return true;
+  }
+
+  return false;
+}
+
+function hasMixedChineseAndEnglish(text) {
+  return /[\u4e00-\u9fff]/.test(text) && /[A-Za-z]/.test(text);
+}
+
+function isValidUiTranslationResult(input, output) {
+  const normalizedInput = input.replace(/\s+/g, " ").trim();
+  const normalizedOutput = output.replace(/\s+/g, " ").trim();
+
+  if (!normalizedOutput || normalizedOutput === normalizedInput) {
+    return false;
+  }
+
+  if (hasMixedChineseAndEnglish(normalizedOutput)) {
+    return false;
+  }
+
+  if (/[A-Za-z]/.test(normalizedOutput)) {
+    return false;
+  }
+
+  if (normalizedOutput.length > Math.max(normalizedInput.length * 3, normalizedInput.length + 20)) {
+    return false;
+  }
+
+  return /[\u4e00-\u9fff]/.test(normalizedOutput);
 }
 
 async function translateWithAi(text, settings) {
@@ -181,14 +289,6 @@ async function translateWithAi(text, settings) {
     throw new Error("翻译接口没有返回可用内容。");
   }
 
-  const normalizedInput = text.replace(/\s+/g, " ").trim();
-  const normalizedOutput = translatedText.replace(/\s+/g, " ").trim();
-  const looksUntranslated =
-    normalizedOutput === normalizedInput ||
-    (normalizedOutput.length > 0 &&
-      normalizedInput.length > 0 &&
-      normalizedOutput.includes(normalizedInput.slice(0, Math.min(120, normalizedInput.length))));
-
   const awkwardLiteralSigns = [
     "我会",
     "great question",
@@ -199,7 +299,7 @@ async function translateWithAi(text, settings) {
     translatedText.toLowerCase().includes(phrase.toLowerCase())
   );
 
-  if (looksUntranslated || looksAwkward) {
+  if (detectMostlyUntranslatedOutput(text, translatedText) || looksAwkward) {
     const retryResponse = await requestTranslation(buildRetryMessages(text));
 
     if (!retryResponse.ok) {
@@ -214,6 +314,80 @@ async function translateWithAi(text, settings) {
     }
   }
 
+  if (detectMostlyUntranslatedOutput(text, translatedText)) {
+    throw new Error("模型返回的内容仍然大部分是英文，未完成有效翻译。");
+  }
+
+  return translatedText;
+}
+
+async function translateUiTextWithAi(text, settings) {
+  const endpoint = buildChatEndpoint(settings.apiBaseUrl);
+  if (!endpoint || !settings.model) {
+    throw new Error("请先在扩展弹窗中填写 API Base URL 和 Model。");
+  }
+
+  const headers = {
+    "Content-Type": "application/json"
+  };
+  if (settings.apiKey) {
+    headers.Authorization = `Bearer ${settings.apiKey}`;
+  }
+
+  async function requestTranslation(messages) {
+    return fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: settings.model,
+        temperature: 0,
+        messages
+      })
+    });
+  }
+
+  let response;
+  try {
+    response = await requestTranslation(buildUiPrimaryMessages(text));
+  } catch (error) {
+    if (endpoint.includes("127.0.0.1:1234") || endpoint.includes("localhost:1234")) {
+      throw new Error(
+        "连接不到 LM Studio 本地接口。请确认 LM Studio 已启动本地服务器，并且 http://127.0.0.1:1234 可访问。"
+      );
+    }
+    throw error;
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`UI 翻译接口调用失败：${response.status} ${errorText}`);
+  }
+
+  const data = await response.json();
+  let translatedText = data?.choices?.[0]?.message?.content?.trim();
+  if (!translatedText) {
+    throw new Error("UI 翻译接口没有返回可用内容。");
+  }
+
+  if (!isValidUiTranslationResult(text, translatedText)) {
+    const retryResponse = await requestTranslation(buildUiRetryMessages(text));
+
+    if (!retryResponse.ok) {
+      const retryErrorText = await retryResponse.text();
+      throw new Error(`UI 翻译接口二次调用失败：${retryResponse.status} ${retryErrorText}`);
+    }
+
+    const retryData = await retryResponse.json();
+    const retriedText = retryData?.choices?.[0]?.message?.content?.trim();
+    if (retriedText) {
+      translatedText = retriedText;
+    }
+  }
+
+  if (!isValidUiTranslationResult(text, translatedText)) {
+    throw new Error("模型未返回可直接用于界面的完整中文结果。");
+  }
+
   return translatedText;
 }
 
@@ -221,6 +395,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.action === "translateText") {
     getSettings()
       .then((settings) => translateWithAi(message.text, settings))
+      .then((translatedText) => sendResponse({ ok: true, translatedText }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message?.action === "translateUiText") {
+    getSettings()
+      .then((settings) => translateUiTextWithAi(message.text, settings))
       .then((translatedText) => sendResponse({ ok: true, translatedText }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;

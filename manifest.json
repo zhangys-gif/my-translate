@@ -5,7 +5,8 @@
   "description": "Translate common GitHub UI text into Chinese with a local dictionary.",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
     "https://github.com/*",

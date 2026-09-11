@@ -1,3 +1,7 @@
+if (!globalThis.__ghTranslatorContentScriptLoaded) {
+  globalThis.__ghTranslatorContentScriptLoaded = true;
+  document.documentElement.dataset.ghTranslatorLoaded = "true";
+
 const STORAGE_KEY = "ghTranslatorSettings";
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -11,10 +15,58 @@ function normalizeLookupText(text) {
   return text.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function hasMixedChineseAndEnglish(text) {
+  return /[\u4e00-\u9fff]/.test(text) && /[A-Za-z]/.test(text);
+}
+
+function canUseUiAiFallback(text, referenceElement = null) {
+  const trimmed = text.trim();
+  if (!shouldUseDictionaryForText(trimmed, referenceElement)) {
+    return false;
+  }
+  if (!/[A-Za-z]{2,}/.test(trimmed)) {
+    return false;
+  }
+  if (hasMixedChineseAndEnglish(trimmed)) {
+    return false;
+  }
+  if (/https?:\/\//i.test(trimmed) || /@[\w-]+/.test(trimmed) || /\S+@\S+\.\S+/.test(trimmed)) {
+    return false;
+  }
+  return true;
+}
+
 const EXACT_TEXT_MAP = new Map(
   [
     ["Pull requests", "拉取请求"],
+    ["All pull requests", "全部拉取请求"],
+    ["Pull request", "拉取请求"],
     ["Issues", "议题"],
+    ["All issues", "全部议题"],
+    ["Issue", "议题"],
+    ["is:", "类型:"],
+    ["state:", "状态:"],
+    ["archived:", "已归档:"],
+    ["assignee:", "负责人:"],
+    ["sort:", "排序:"],
+    ["issue", "议题"],
+    ["open", "未关闭"],
+    ["false", "否"],
+    ["true", "是"],
+    ["@me", "@我"],
+    ["updated-desc", "最近更新优先"],
+    ["updated-asc", "最早更新优先"],
+    ["is:issue", "类型:议题"],
+    ["state:open", "状态:未关闭"],
+    ["archived:false", "已归档:否"],
+    ["archived:true", "已归档:是"],
+    ["assignee:@me", "负责人:@我"],
+    ["sort:updated-desc", "排序:最近更新优先"],
+    ["sort:updated-asc", "排序:最早更新优先"],
+    ["Assigned to me", "分配给我的"],
+    ["Created by me", "我创建的"],
+    ["Mentioning me", "提及我的"],
+    ["Recently updated", "最近更新"],
     ["Marketplace", "市场"],
     ["Explore", "探索"],
     ["Codespaces", "云端开发"],
@@ -136,7 +188,133 @@ const EXACT_TEXT_MAP = new Map(
     ["Copy", "复制"],
     ["Permalink", "永久链接"],
     ["View", "查看"],
-    ["Details", "详情"]
+    ["Details", "详情"],
+    ["Dashboard", "仪表盘"],
+    ["Home", "首页"],
+    ["Saved", "已保存"],
+    ["Trending", "趋势"],
+    ["Topics", "主题"],
+    ["Collections", "精选集"],
+    ["Events", "事件"],
+    ["Sponsors", "赞助"],
+    ["Your profile", "你的资料"],
+    ["Your repositories", "你的仓库"],
+    ["Your projects", "你的项目"],
+    ["Your stars", "你的星标"],
+    ["Feature preview", "功能预览"],
+    ["Help", "帮助"],
+    ["Sign out", "退出登录"],
+    ["Appearance settings", "外观设置"],
+    ["Enterprise", "企业版"],
+    ["Team", "团队版"],
+    ["Pricing", "价格"],
+    ["Search", "搜索"],
+    ["Create", "新建"],
+    ["New", "新建"],
+    ["Clone", "克隆"],
+    ["Download ZIP", "下载 ZIP"],
+    ["Use template", "使用模板"],
+    ["This repository", "此仓库"],
+    ["Branch", "分支"],
+    ["Tag", "标签"],
+    ["Release", "发行版"],
+    ["Pages", "页面"],
+    ["General", "常规"],
+    ["Access", "访问权限"],
+    ["Collaborators", "协作者"],
+    ["Collaborators and teams", "协作者与团队"],
+    ["Manage access", "管理访问权限"],
+    ["Code and automation", "代码与自动化"],
+    ["Webhooks", "Webhooks"],
+    ["Deploy keys", "部署密钥"],
+    ["Rules", "规则"],
+    ["Rulesets", "规则集"],
+    ["Branch protection rules", "分支保护规则"],
+    ["Custom properties", "自定义属性"],
+    ["Secrets", "机密"],
+    ["Variables", "变量"],
+    ["Secrets and variables", "机密与变量"],
+    ["Code security and analysis", "代码安全与分析"],
+    ["Dependency graph", "依赖关系图"],
+    ["Code scanning", "代码扫描"],
+    ["Secret scanning", "敏感信息扫描"],
+    ["Alerts", "警报"],
+    ["Policies", "策略"],
+    ["Archived", "已归档"],
+    ["Archive", "归档"],
+    ["Unarchive", "取消归档"],
+    ["Danger Zone", "危险区域"],
+    ["Community standards", "社区规范"],
+    ["License", "许可证"],
+    ["Saved replies", "已保存回复"],
+    ["Templates", "模板"],
+    ["Watching", "正在关注"],
+    ["Participating and @mentions", "参与和 @提及"],
+    ["Custom", "自定义"],
+    ["Ignore", "忽略"],
+    ["Subscribe", "订阅"],
+    ["Unsubscribe", "取消订阅"],
+    ["Mute", "静音"],
+    ["Unmute", "取消静音"],
+    ["Mark as read", "标记为已读"],
+    ["Done", "完成"],
+    ["Save", "保存"],
+    ["Choose a branch", "选择分支"],
+    ["Switch branches/tags", "切换分支/标签"],
+    ["Find file", "查找文件"],
+    ["View file", "查看文件"],
+    ["Copy path", "复制路径"],
+    ["Download raw file", "下载原始文件"],
+    ["Commit changes", "提交更改"],
+    ["Commit message", "提交说明"],
+    ["Propose changes", "提交更改建议"],
+    ["Create branch", "创建分支"],
+    ["Create branch and open a pull request", "创建分支并发起拉取请求"],
+    ["Compare & pull request", "比较并发起拉取请求"],
+    ["Create draft pull request", "创建草稿拉取请求"],
+    ["Base repository", "基准仓库"],
+    ["Base branch", "基准分支"],
+    ["Compare branch", "对比分支"],
+    ["Development", "开发进展"],
+    ["Participants", "参与者"],
+    ["Linked issues", "关联议题"],
+    ["Linked pull requests", "关联拉取请求"],
+    ["Status", "状态"],
+    ["Ready for review", "准备接受审查"],
+    ["Convert to draft", "转为草稿"],
+    ["Mark as ready for review", "标记为可审查"],
+    ["Auto-merge", "自动合并"],
+    ["Enable auto-merge", "启用自动合并"],
+    ["Disable auto-merge", "禁用自动合并"],
+    ["Resolve conflicts", "解决冲突"],
+    ["Start a review", "开始审查"],
+    ["Add your review", "添加审查"],
+    ["Finish your review", "完成审查"],
+    ["Viewed", "已查看"],
+    ["Outdated", "已过时"],
+    ["Resolved", "已解决"],
+    ["Hide resolved", "隐藏已解决"],
+    ["Show resolved", "显示已解决"],
+    ["Workflows", "工作流"],
+    ["Artifacts", "构建产物"],
+    ["Runs", "运行记录"],
+    ["Top repositories", "常用仓库"],
+    ["Ask", "提问"],
+    ["All repositories", "所有仓库"],
+    ["Debug", "调试"],
+    ["Agent", "智能体"],
+    ["Write code", "编写代码"],
+    ["Feed", "动态流"],
+    ["Trending repositories", "热门仓库"],
+    ["See more", "查看更多"],
+    ["Auto", "自动"],
+    ["Download for Windows", "下载 Windows 版"],
+    ["MCP registry", "MCP 注册表"],
+    ["Views", "视图"],
+    ["No saved views", "暂无已保存视图"],
+    ["searching and filtering issues and", "搜索和筛选议题与"],
+    ["pull requests.", "拉取请求。"],
+    ["pull requests", "拉取请求"]
   ].map(([key, value]) => [normalizeLookupText(key), value])
 );
 
@@ -155,8 +333,31 @@ const PHRASE_REPLACEMENTS = [
   [/\bNo branches\b/gi, "无分支"],
   [/\bNo tags\b/gi, "无标签"],
   [/\bNo commits yet\b/gi, "暂无提交记录"],
-  [/\bNo results matched your search\./gi, "没有匹配你搜索条件的结果。"],
+  [/\bNo results matched your search\b\.?/gi, "没有匹配你搜索条件的结果"],
   [/\bNo results found\b/gi, "未找到结果"],
+  [/\bTry a different search query\b\.?/gi, "试试其他搜索条件"],
+  [/\bLearn more about searching and filtering issues and pull requests\b\.?/gi, "了解更多关于搜索和筛选议题与拉取请求的信息"],
+  [/\bLearn more about\b/gi, "了解更多关于"],
+  [/\bsearching and filtering issues and pull requests\b/gi, "搜索和筛选议题与拉取请求"],
+  [/\bAsk anything or type @ to add context\b/gi, "可直接提问，或输入 @ 添加上下文"],
+  [/\bNo one assigned\b/gi, "无人负责"],
+  [/\bNo workflows\b/gi, "暂无工作流"],
+  [/\bNo workflow runs yet\b/gi, "暂无工作流运行记录"],
+  [/\bNo deployments\b/gi, "暂无部署记录"],
+  [/\bNo environments\b/gi, "暂无环境"],
+  [/\bNo discussions yet\b/gi, "暂无讨论"],
+  [/\bNo packages yet\b/gi, "暂无软件包"],
+  [/\bNo projects yet\b/gi, "暂无项目"],
+  [/\bNo branches matched\b/gi, "没有匹配的分支"],
+  [/\bNo tags matched\b/gi, "没有匹配的标签"],
+  [/\bThere aren'?t any open issues\./gi, "暂无未关闭议题。"],
+  [/\bThere aren'?t any closed issues\./gi, "暂无已关闭议题。"],
+  [/\bThere aren'?t any open pull requests\./gi, "暂无未关闭拉取请求。"],
+  [/\bThere aren'?t any closed pull requests\./gi, "暂无已关闭拉取请求。"],
+  [/\bThere aren'?t any merged pull requests\./gi, "暂无已合并拉取请求。"],
+  [/\bThere aren'?t any discussions yet\./gi, "暂无讨论。"],
+  [/\bThere aren'?t any projects yet\./gi, "暂无项目。"],
+  [/\bThere aren'?t any releases here\b/gi, "这里还没有发行版"],
   [/\bLearn more about labels\b/gi, "了解更多关于标签的信息"],
   [/\bLearn more about pull requests\b/gi, "了解更多关于拉取请求的信息"],
   [/\bLearn more about issues\b/gi, "了解更多关于议题的信息"],
@@ -225,11 +426,48 @@ const PHRASE_REPLACEMENTS = [
   [/\bSquash and merge\b/gi, "压缩后合并"],
   [/\bRebase and merge\b/gi, "变基后合并"],
   [/\bCreate a new branch\b/gi, "创建新分支"],
+  [/\bFind or create a branch\.\.\.\b/gi, "查找或创建分支..."],
+  [/\bFind or create a tag\.\.\.\b/gi, "查找或创建标签..."],
+  [/\bFilter branches \/ tags\b/gi, "筛选分支 / 标签"],
+  [/\bChoose a branch\b/gi, "选择分支"],
+  [/\bSwitch branches\/tags\b/gi, "切换分支/标签"],
+  [/\bFind a file\b/gi, "查找文件"],
+  [/\bCommit changes\b/gi, "提交更改"],
+  [/\bPropose changes\b/gi, "提交更改建议"],
+  [/\bCreate branch\b/gi, "创建分支"],
+  [/\bBase repository\b/gi, "基准仓库"],
+  [/\bBase branch\b/gi, "基准分支"],
+  [/\bCompare branch\b/gi, "对比分支"],
+  [/\bReady for review\b/gi, "准备接受审查"],
+  [/\bConvert to draft\b/gi, "转为草稿"],
+  [/\bMark as ready for review\b/gi, "标记为可审查"],
+  [/\bResolve conflicts\b/gi, "解决冲突"],
+  [/\bStart a review\b/gi, "开始审查"],
+  [/\bAdd your review\b/gi, "添加审查"],
+  [/\bFinish your review\b/gi, "完成审查"],
+  [/\bEnable auto-merge\b/gi, "启用自动合并"],
+  [/\bDisable auto-merge\b/gi, "禁用自动合并"],
+  [/\bOpen in desktop\b/gi, "在桌面端打开"],
+  [/\bDownload ZIP\b/gi, "下载 ZIP"],
+  [/\bUse this template\b/gi, "使用此模板"],
+  [/\bGo to parent directory\b/gi, "转到上级目录"],
+  [/\bThis repository is archived\b/gi, "此仓库已归档"],
+  [/\bThis repository was archived by the owner\b/gi, "此仓库已被所有者归档"],
+  [/\bPublic repository\b/gi, "公开仓库"],
+  [/\bPrivate repository\b/gi, "私有仓库"],
   [/\bGo to file\b/gi, "转到文件"],
   [/\bAdd file\b/gi, "添加文件"],
   [/\bUpload files\b/gi, "上传文件"],
   [/\bCreate new file\b/gi, "创建新文件"],
   [/\bLatest commit\b/gi, "最新提交"],
+  [/\bUpdated (\d+) days ago\b/gi, "$1 天前更新"],
+  [/\bUpdated (\d+) hours ago\b/gi, "$1 小时前更新"],
+  [/\bUpdated (\d+) minutes ago\b/gi, "$1 分钟前更新"],
+  [/\b(\d+)\s+repositories\b/gi, "$1 个仓库"],
+  [/\b(\d+)\s+projects\b/gi, "$1 个项目"],
+  [/\b(\d+)\s+packages\b/gi, "$1 个软件包"],
+  [/\b(\d+)\s+participants\b/gi, "$1 位参与者"],
+  [/\b(\d+)\s+comments\b/gi, "$1 条评论"],
   [/\b(\d+)\s+commits?\b/gi, "$1 次提交"],
   [/\b(\d+)\s+branches\b/gi, "$1 个分支"],
   [/\b(\d+)\s+tags\b/gi, "$1 个标签"],
@@ -243,7 +481,8 @@ const PHRASE_REPLACEMENTS = [
   [/\b(\d+)\s+watching\b/gi, "$1 人关注"],
   [/\b(\d+)\s+open\b/gi, "$1 个未关闭"],
   [/\b(\d+)\s+closed\b/gi, "$1 个已关闭"],
-  [/\b(\d+)\s+merged\b/gi, "$1 个已合并"]
+  [/\b(\d+)\s+merged\b/gi, "$1 个已合并"],
+  [/\bLoad more\.\.\.\b/gi, "加载更多..."]
 ];
 
 const CONTEXTUAL_TEXT_MAPS = [
@@ -370,6 +609,9 @@ const MODULE_HELP_POPOVER_ID = "gh-translator-help-popover";
 const TRANSLATION_RESULT_STYLE_ID = "gh-translator-result-style";
 const FLOATING_PANEL_STYLE_ID = "gh-translator-panel-style";
 const FLOATING_PANEL_ID = "gh-translator-floating-panel";
+const FLOATING_PANEL_POSITION_KEY = "ghTranslatorPanelPosition";
+const UI_AI_CACHE_STORAGE_KEY = "ghTranslatorUiAiCache";
+const UI_AI_CACHE_MISS = "__MISS__";
 const MAX_UI_TEXT_LENGTH = 80;
 const MAX_UI_LINE_BREAKS = 1;
 const LONG_TEXT_CONTAINER_SELECTORS = [
@@ -383,8 +625,67 @@ const LONG_TEXT_CONTAINER_SELECTORS = [
   "[data-testid='pr-timeline-comment-body']",
   ".repository-content .Box-body"
 ].join(", ");
+const USER_CONTENT_EXCLUDE_SELECTORS = [
+  "[itemprop='about']",
+  ".f4.my-3",
+  ".js-issue-title",
+  "[data-testid='issue-title']",
+  ".commit-title",
+  ".commit-desc",
+  ".js-pinned-item-desc",
+  ".pinned-item-desc"
+].join(", ");
+const UI_TRANSLATION_CONTAINER_SELECTORS = [
+  "header",
+  ".Header",
+  ".AppHeader",
+  ".UnderlineNav",
+  ".tabnav",
+  "nav",
+  "[role='navigation']",
+  "[role='menu']",
+  "[role='menuitem']",
+  ".Layout-sidebar",
+  ".BorderGrid",
+  ".BorderGrid-row",
+  ".js-issue-sidebar",
+  ".discussion-sidebar",
+  ".file-navigation",
+  ".file-header",
+  ".js-blob-header",
+  ".react-blob-header",
+  ".pagehead",
+  ".pagehead-actions",
+  "main",
+  "aside",
+  ".application-main",
+  ".feed-left-sidebar",
+  ".feed-main",
+  ".feed-item",
+  ".feed-item-content",
+  ".dashboard-sidebar",
+  ".dashboard",
+  ".repository-content .Box-header",
+  ".repository-content .Box-title",
+  ".repository-content .commit-tease",
+  ".select-menu",
+  ".SelectMenu",
+  ".SelectMenu-modal",
+  ".Overlay",
+  ".ActionList-sectionTitle",
+  "button",
+  "[role='button']",
+  "summary",
+  ".Button",
+  ".btn",
+  "details-menu",
+  ".ActionList",
+  ".ActionList-item"
+].join(", ");
 const translatedTextNodes = new Map();
 const translatedAttributes = new Map();
+const uiAiTranslationCache = new Map();
+const uiAiPendingRequests = new Map();
 let observer;
 let currentSettings = { ...DEFAULT_SETTINGS };
 
@@ -407,6 +708,9 @@ function shouldSkipNode(node) {
   if (parent.closest(LONG_TEXT_CONTAINER_SELECTORS)) {
     return true;
   }
+  if (parent.closest(USER_CONTENT_EXCLUDE_SELECTORS)) {
+    return true;
+  }
   return false;
 }
 
@@ -420,12 +724,20 @@ function shouldUseDictionaryForText(text, referenceElement = null) {
     return false;
   }
 
+  if (referenceElement?.closest?.(USER_CONTENT_EXCLUDE_SELECTORS)) {
+    return false;
+  }
+
   const lineBreakCount = (trimmed.match(/\n/g) || []).length;
   if (lineBreakCount > MAX_UI_LINE_BREAKS) {
     return false;
   }
 
   if (trimmed.length > MAX_UI_TEXT_LENGTH) {
+    return false;
+  }
+
+  if (referenceElement?.closest && !referenceElement.closest(UI_TRANSLATION_CONTAINER_SELECTORS)) {
     return false;
   }
 
@@ -702,6 +1014,8 @@ function ensureFloatingPanelStyles() {
       padding: 12px 14px;
       border-bottom: 1px solid var(--borderColor-muted, #21262d);
       background: var(--bgColor-default, #0d1117);
+      cursor: move;
+      user-select: none;
     }
 
     .gh-translator-panel-title {
@@ -838,6 +1152,101 @@ function getFloatingPanel() {
   return document.getElementById(FLOATING_PANEL_ID);
 }
 
+function clampFloatingPanelPosition(left, top, width, height) {
+  const maxLeft = Math.max(12, window.innerWidth - width - 12);
+  const maxTop = Math.max(12, window.innerHeight - height - 12);
+  return {
+    left: Math.min(Math.max(12, left), maxLeft),
+    top: Math.min(Math.max(12, top), maxTop)
+  };
+}
+
+async function saveFloatingPanelPosition(position) {
+  await chrome.storage.sync.set({ [FLOATING_PANEL_POSITION_KEY]: position });
+}
+
+async function loadFloatingPanelPosition() {
+  const result = await chrome.storage.sync.get(FLOATING_PANEL_POSITION_KEY);
+  return result[FLOATING_PANEL_POSITION_KEY] || null;
+}
+
+function applyFloatingPanelPosition(panel, position) {
+  const rect = panel.getBoundingClientRect();
+  const nextPosition = clampFloatingPanelPosition(position.left, position.top, rect.width, rect.height);
+  panel.style.top = `${nextPosition.top}px`;
+  panel.style.left = `${nextPosition.left}px`;
+  panel.style.right = "auto";
+}
+
+async function initializeFloatingPanelPosition(panel) {
+  const savedPosition = await loadFloatingPanelPosition();
+  if (!savedPosition) {
+    return;
+  }
+  applyFloatingPanelPosition(panel, savedPosition);
+}
+
+function enableFloatingPanelDrag(panel) {
+  const header = panel.querySelector(".gh-translator-panel-header");
+  if (!header) {
+    return;
+  }
+
+  let dragState = null;
+
+  const onPointerMove = (event) => {
+    if (!dragState) {
+      return;
+    }
+
+    const nextLeft = event.clientX - dragState.offsetX;
+    const nextTop = event.clientY - dragState.offsetY;
+    const nextPosition = clampFloatingPanelPosition(nextLeft, nextTop, dragState.width, dragState.height);
+    panel.style.left = `${nextPosition.left}px`;
+    panel.style.top = `${nextPosition.top}px`;
+    panel.style.right = "auto";
+  };
+
+  const onPointerUp = async () => {
+    if (!dragState) {
+      return;
+    }
+
+    const rect = panel.getBoundingClientRect();
+    const finalPosition = { left: Math.round(rect.left), top: Math.round(rect.top) };
+    dragState = null;
+    document.body.style.userSelect = "";
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+    await saveFloatingPanelPosition(finalPosition);
+  };
+
+  header.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    if (event.target.closest("button, input, summary, a")) {
+      return;
+    }
+
+    const rect = panel.getBoundingClientRect();
+    dragState = {
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      width: rect.width,
+      height: rect.height
+    };
+
+    panel.style.left = `${rect.left}px`;
+    panel.style.top = `${rect.top}px`;
+    panel.style.right = "auto";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  });
+}
+
 function setFloatingPanelStatus(message, isError = false) {
   const status = document.getElementById("gh-translator-panel-status");
   if (!status) {
@@ -913,7 +1322,7 @@ async function handleFloatingPanelTranslate() {
     setFloatingPanelStatus(result.error || "AI 翻译失败。", true);
     return;
   }
-  setFloatingPanelStatus(`AI 翻译完成，共处理 ${result.count} 个正文区域。`);
+  setFloatingPanelStatus(`AI 翻译完成，共处理 ${result.count} 个内容区块。`);
 }
 
 function handleFloatingPanelRestore() {
@@ -991,8 +1400,10 @@ function createFloatingPanel() {
   });
 
   document.body.appendChild(panel);
+  enableFloatingPanelDrag(panel);
   syncFloatingPanelFields();
   setFloatingPanelStatus("面板已就绪。");
+  initializeFloatingPanelPosition(panel).catch(() => {});
 }
 
 function getHelpPopover() {
@@ -1580,14 +1991,132 @@ function translateTextByDictionary(text, referenceElement = null) {
     return original;
   }
 
+  if (hasMixedChineseAndEnglish(translated)) {
+    return original;
+  }
+
   const leading = original.match(/^\s*/)?.[0] || "";
   const trailing = original.match(/\s*$/)?.[0] || "";
   return `${leading}${translated}${trailing}`;
 }
 
+async function loadUiAiCache() {
+  const result = await chrome.storage.local.get(UI_AI_CACHE_STORAGE_KEY);
+  const cacheObject = result[UI_AI_CACHE_STORAGE_KEY] || {};
+  uiAiTranslationCache.clear();
+  Object.entries(cacheObject).forEach(([key, value]) => {
+    if (typeof value === "string") {
+      uiAiTranslationCache.set(key, value);
+    }
+  });
+}
+
+async function persistUiAiCache() {
+  await chrome.storage.local.set({
+    [UI_AI_CACHE_STORAGE_KEY]: Object.fromEntries(uiAiTranslationCache.entries())
+  });
+}
+
+async function cacheUiAiTranslation(text, translatedText) {
+  uiAiTranslationCache.set(normalizeLookupText(text), translatedText);
+  await persistUiAiCache();
+}
+
+async function requestUiAiTranslation(text) {
+  const key = normalizeLookupText(text);
+  if (uiAiTranslationCache.has(key)) {
+    const cachedValue = uiAiTranslationCache.get(key);
+    return cachedValue === UI_AI_CACHE_MISS ? null : cachedValue;
+  }
+
+  if (uiAiPendingRequests.has(key)) {
+    return uiAiPendingRequests.get(key);
+  }
+
+  const pending = sendRuntimeMessage({
+    action: "translateUiText",
+    text
+  })
+    .then(async (response) => {
+      if (!response?.ok || !response.translatedText) {
+        if (response?.error?.includes("完整中文结果") || response?.error?.includes("大部分是英文")) {
+          await cacheUiAiTranslation(text, UI_AI_CACHE_MISS);
+        }
+        return null;
+      }
+
+      const translatedText = response.translatedText.trim();
+      if (!translatedText || hasMixedChineseAndEnglish(translatedText) || /[A-Za-z]/.test(translatedText)) {
+        await cacheUiAiTranslation(text, UI_AI_CACHE_MISS);
+        return null;
+      }
+
+      await cacheUiAiTranslation(text, translatedText);
+      return translatedText;
+    })
+    .catch(() => null)
+    .finally(() => {
+      uiAiPendingRequests.delete(key);
+    });
+
+  uiAiPendingRequests.set(key, pending);
+  return pending;
+}
+
+async function applyUiAiFallback(textCandidates = [], attributeCandidates = []) {
+  const uniqueTexts = Array.from(
+    new Set(
+      [...textCandidates.map((candidate) => candidate.original), ...attributeCandidates.map((candidate) => candidate.original)].map(
+        (text) => text.trim()
+      )
+    )
+  ).filter(Boolean);
+
+  if (!uniqueTexts.length) {
+    return;
+  }
+
+  const translationResults = new Map();
+  await Promise.all(
+    uniqueTexts.map(async (text) => {
+      const translatedText = await requestUiAiTranslation(text);
+      translationResults.set(text, translatedText);
+    })
+  );
+
+  for (const candidate of textCandidates) {
+    const translatedText = translationResults.get(candidate.original.trim());
+    if (!translatedText || !candidate.node.isConnected || candidate.node.nodeValue !== candidate.original) {
+      continue;
+    }
+    if (!translatedTextNodes.has(candidate.node)) {
+      translatedTextNodes.set(candidate.node, candidate.original);
+    }
+    candidate.node.nodeValue = translatedText;
+  }
+
+  for (const candidate of attributeCandidates) {
+    const translatedText = translationResults.get(candidate.original.trim());
+    if (!translatedText || !candidate.element.isConnected || candidate.element.getAttribute(candidate.attributeName) !== candidate.original) {
+      continue;
+    }
+
+    let cached = translatedAttributes.get(candidate.element);
+    if (!cached) {
+      cached = {};
+      translatedAttributes.set(candidate.element, cached);
+    }
+    if (!(candidate.attributeName in cached)) {
+      cached[candidate.attributeName] = candidate.original;
+    }
+    candidate.element.setAttribute(candidate.attributeName, translatedText);
+  }
+}
+
 function translateNodeText(root = document.body) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const pending = [];
+  const aiCandidates = [];
   while (walker.nextNode()) {
     const node = walker.currentNode;
     if (shouldSkipNode(node)) {
@@ -1596,6 +2125,14 @@ function translateNodeText(root = document.body) {
     const nextValue = translateTextByDictionary(node.nodeValue || "", node.parentElement);
     if (nextValue !== node.nodeValue) {
       pending.push([node, node.nodeValue, nextValue]);
+      continue;
+    }
+
+    if (canUseUiAiFallback(node.nodeValue || "", node.parentElement)) {
+      aiCandidates.push({
+        node,
+        original: node.nodeValue || ""
+      });
     }
   }
 
@@ -1605,12 +2142,29 @@ function translateNodeText(root = document.body) {
     }
     node.nodeValue = nextValue;
   }
+
+  return aiCandidates;
 }
 
 function translateAttributes(root = document.body) {
-  const elements = root.querySelectorAll("[aria-label], [placeholder], [title]");
+  const elements = root.querySelectorAll(
+    "[aria-label], [placeholder], [title], [data-disable-with], input[type='button'][value], input[type='submit'][value], input[type='reset'][value]"
+  );
+  const aiCandidates = [];
   for (const element of elements) {
-    for (const attributeName of ["aria-label", "placeholder", "title"]) {
+    if (element.closest(USER_CONTENT_EXCLUDE_SELECTORS)) {
+      continue;
+    }
+
+    for (const attributeName of ["aria-label", "placeholder", "title", "data-disable-with", "value"]) {
+      if (
+        attributeName === "value" &&
+        (!(element instanceof HTMLInputElement) ||
+          !["button", "submit", "reset"].includes((element.type || "").toLowerCase()))
+      ) {
+        continue;
+      }
+
       const original = element.getAttribute(attributeName);
       if (!original) {
         continue;
@@ -1620,6 +2174,13 @@ function translateAttributes(root = document.body) {
       }
       const translated = translateTextByDictionary(original, element);
       if (translated === original) {
+        if (canUseUiAiFallback(original, element)) {
+          aiCandidates.push({
+            element,
+            attributeName,
+            original
+          });
+        }
         continue;
       }
 
@@ -1634,16 +2195,21 @@ function translateAttributes(root = document.body) {
       element.setAttribute(attributeName, translated);
     }
   }
+
+  return aiCandidates;
 }
 
 function applyUiTranslation(root = document.body) {
   if (!currentSettings.enabled || !isGitHubPage()) {
     return;
   }
-  translateNodeText(root);
+  const textCandidates = translateNodeText(root);
   if (root.querySelectorAll) {
-    translateAttributes(root);
+    const attributeCandidates = translateAttributes(root);
     applyModuleHelp(root);
+    if (textCandidates.length || attributeCandidates.length) {
+      applyUiAiFallback(textCandidates, attributeCandidates).catch(() => {});
+    }
   }
 }
 
@@ -1703,6 +2269,11 @@ function startObserver() {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.action === "ping") {
+    sendResponse({ ok: true });
+    return false;
+  }
+
   if (message?.action === "translatePage") {
     translatePageContent().then(sendResponse);
     return true;
@@ -1734,7 +2305,7 @@ async function init() {
   if (!isGitHubPage()) {
     return;
   }
-  await loadSettings();
+  await Promise.all([loadSettings(), loadUiAiCache()]);
   createFloatingPanel();
   if (currentSettings.enabled) {
     applyUiTranslation(document.body);
@@ -1743,3 +2314,4 @@ async function init() {
 }
 
 init();
+}

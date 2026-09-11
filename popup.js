@@ -45,6 +45,49 @@ function sendMessageToTab(tabId, message) {
   });
 }
 
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function canRetryByInjecting(error) {
+  return (
+    typeof error?.message === "string" &&
+    (error.message.includes("Receiving end does not exist") ||
+      error.message.includes("The message port closed before a response was received"))
+  );
+}
+
+function injectContentScript(tabId) {
+  return chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["content.js"]
+  });
+}
+
+async function waitForContentScript(tabId, attempts = 5, delayMs = 250) {
+  let lastError = null;
+
+  for (let index = 0; index < attempts; index += 1) {
+    try {
+      const response = await sendMessageToTab(tabId, { action: "ping" });
+      if (response?.ok) {
+        return true;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (index < attempts - 1) {
+      await delay(delayMs);
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+  throw new Error("content script 未响应。");
+}
+
 async function notifyContentScript(tab, action) {
   if (!tab?.id) {
     throw new Error("没有找到当前标签页。");
@@ -57,8 +100,17 @@ async function notifyContentScript(tab, action) {
   try {
     return await sendMessageToTab(tab.id, { action });
   } catch (error) {
-    if (error.message.includes("Receiving end does not exist")) {
-      throw new Error("当前 GitHub 页面还没连接到扩展。请刷新页面后再试一次。");
+    if (canRetryByInjecting(error)) {
+      try {
+        await injectContentScript(tab.id);
+        await waitForContentScript(tab.id);
+        return await sendMessageToTab(tab.id, { action });
+      } catch (retryError) {
+        if (canRetryByInjecting(retryError)) {
+          throw new Error("当前 GitHub 页面还没准备好，稍等一秒后再试一次。");
+        }
+        throw retryError;
+      }
     }
     throw error;
   }
@@ -107,13 +159,13 @@ async function refreshCurrentPage() {
 
 async function translateCurrentPage() {
   const tab = await getCurrentTab();
-  setStatus("正在调用 AI 翻译当前页 README / 正文...");
+  setStatus("正在调用 AI 翻译当前页主要内容...");
   const response = await notifyContentScript(tab, "translatePage");
   if (!response?.ok) {
     setStatus(response?.error || "AI 翻译失败。", true);
     return;
   }
-  setStatus(`AI 翻译完成，共处理 ${response.count} 个 README / 正文区域。`);
+  setStatus(`AI 翻译完成，共处理 ${response.count} 个内容区块。`);
 }
 
 async function restoreCurrentPage() {
