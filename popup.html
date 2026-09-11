@@ -10,6 +10,7 @@
     <main class="popup">
       <h1>GitHub 翻译器</h1>
       <p class="status">模块名、按钮和状态词使用本地词典；README、Issue、PR 和评论正文默认使用 LM Studio 本地 AI 翻译。</p>
+      <p class="note">本扩展不提供官方云端翻译服务。AI 请求只会发送到你自己填写的 API Base URL，例如本地 LM Studio，或你自行选择的第三方模型接口。</p>
 
       <label class="field checkbox-field">
         <input id="enabled" type="checkbox" />
@@ -18,7 +19,7 @@
 
       <label class="field">
         <span>API Base URL</span>
-        <input id="apiBaseUrl" type="text" placeholder="默认 http://127.0.0.1:1234/v1" />
+        <input id="apiBaseUrl" type="text" placeholder="填写你自己的本地或第三方 OpenAI 兼容接口" />
       </label>
 
       <label class="field">

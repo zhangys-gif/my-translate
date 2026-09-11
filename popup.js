@@ -191,4 +191,4 @@ elements.restoreButton.addEventListener("click", () => {
 });
 
 loadSettings().catch((error) => setStatus(error.message, true));
-setStatus("默认使用 LM Studio 本地接口；如果你改用别的本地或云端模型，也可以直接覆盖这些配置。");
+setStatus("默认使用 LM Studio 本地接口；本扩展不内置官方云端服务，只会请求你自己配置的本地或第三方模型接口。");
